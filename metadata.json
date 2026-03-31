@@ -1,0 +1,5 @@
+{
+  "name": "Portal Cativo UniFi",
+  "description": "Um portal cativo moderno para UniFi Network, permitindo cadastro de usuários e autorização automática de WiFi.",
+  "requestFramePermissions": []
+}
