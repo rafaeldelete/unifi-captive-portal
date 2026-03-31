@@ -21,7 +21,7 @@ app.use(express.json());
 app.use(cookieParser());
 
 // UniFi Controller Configuration
-const UNIFI_URL = process.env.UNIFI_CONTROLLER_URL;
+const UNIFI_URL = process.env.UNIFI_CONTROLLER_URL?.replace(/\/$/, ""); // Remove trailing slash
 const UNIFI_USER = process.env.UNIFI_USERNAME;
 const UNIFI_PASS = process.env.UNIFI_PASSWORD;
 const UNIFI_SITE = process.env.UNIFI_SITE || "default";
@@ -31,26 +31,51 @@ const unifiAxios = axios.create({
   baseURL: UNIFI_URL,
   httpsAgent: new https.Agent({ rejectUnauthorized: false }),
   withCredentials: true,
+  headers: {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  }
 });
 
 async function loginToUnifi() {
+  const credentials = {
+    username: UNIFI_USER,
+    password: UNIFI_PASS,
+  };
+
+  console.log(`Attempting UniFi login at ${UNIFI_URL}...`);
+
+  // Try UniFi OS login first
   try {
-    const response = await unifiAxios.post("/api/auth/login", {
-      username: UNIFI_USER,
-      password: UNIFI_PASS,
-    });
-    // Axios handles cookies automatically if withCredentials is true and we reuse the instance
+    const response = await unifiAxios.post("/api/auth/login", credentials);
+    console.log("UniFi OS Login Successful");
     return response.headers["set-cookie"];
-  } catch (error) {
-    console.error("UniFi Login Error:", error);
-    throw error;
+  } catch (osError: any) {
+    console.log(`UniFi OS login failed (${osError.response?.status}), trying legacy endpoint...`);
+    
+    // Try legacy login
+    try {
+      const response = await unifiAxios.post("/api/login", credentials);
+      console.log("Legacy UniFi Login Successful");
+      return response.headers["set-cookie"];
+    } catch (legacyError: any) {
+      const status = legacyError.response?.status || "No Status";
+      const message = legacyError.response?.data?.meta?.msg || legacyError.message;
+      console.error(`All UniFi Login attempts failed. Last error [${status}]:`, message);
+      throw new Error(`UniFi Login Failed: ${message} (Status ${status})`);
+    }
   }
 }
 
 async function authorizeGuest(mac: string, minutes: number = 60) {
   try {
-    // Ensure we are logged in (UniFi sessions usually last a while, but we can login each time for simplicity or handle session)
+    if (!UNIFI_URL || !UNIFI_USER || !UNIFI_PASS) {
+      throw new Error("UniFi environment variables (URL, Username, Password) are not configured.");
+    }
+
     await loginToUnifi();
+    
+    console.log(`Authorizing MAC ${mac} for ${minutes} minutes on site ${UNIFI_SITE}...`);
     
     const response = await unifiAxios.post(`/api/s/${UNIFI_SITE}/cmd/stamgr`, {
       cmd: "authorize-guest",
@@ -58,10 +83,13 @@ async function authorizeGuest(mac: string, minutes: number = 60) {
       minutes: minutes,
     });
     
+    console.log("UniFi Authorization Response:", JSON.stringify(response.data));
     return response.data;
-  } catch (error) {
-    console.error("UniFi Authorization Error:", error);
-    throw error;
+  } catch (error: any) {
+    const status = error.response?.status;
+    const message = error.response?.data?.meta?.msg || error.message;
+    console.error(`UniFi Authorization Error [${status}]:`, message);
+    throw new Error(`UniFi Authorization Failed: ${message}`);
   }
 }
 
