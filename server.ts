@@ -5,11 +5,17 @@ import axios from "axios";
 import https from "https";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
+import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
+
+// Supabase Configuration
+const supabaseUrl = process.env.SUPABASE_URL || '';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 app.use(express.json());
 app.use(cookieParser());

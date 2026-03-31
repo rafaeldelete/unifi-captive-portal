@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Wifi, ShieldCheck, Smartphone, Headphones, CheckCircle2, AlertCircle, ArrowRight, Loader2, Lock } from 'lucide-react';
-import { db, auth } from './firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { supabase } from './supabase';
 
 // Types
 interface RegistrationData {
@@ -47,14 +46,21 @@ export default function App() {
     setError(null);
 
     try {
-      // 1. Save to Firestore
-      await addDoc(collection(db, 'registrations'), {
-        ...formData,
-        macAddress: params.id || 'unknown',
-        apMac: params.ap || 'unknown',
-        ssid: params.ssid || 'unknown',
-        registeredAt: serverTimestamp(),
-      });
+      // 1. Save to Supabase
+      const { error: supabaseError } = await supabase
+        .from('registrations')
+        .insert([
+          {
+            full_name: formData.fullName,
+            email: formData.email,
+            phone_number: formData.phoneNumber,
+            mac_address: params.id || 'unknown',
+            ap_mac: params.ap || 'unknown',
+            ssid: params.ssid || 'unknown',
+          }
+        ]);
+
+      if (supabaseError) throw new Error(supabaseError.message);
 
       // 2. Call Backend API to authorize in UniFi
       const response = await fetch('/api/authorize', {
