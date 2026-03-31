@@ -89,8 +89,9 @@ const unifiAxios = wrapper(axios.create({
   }
 }));
 
-// Store CSRF token if provided by UniFi OS
+// Store CSRF token and UniFi OS flag
 let csrfToken: string | null = null;
+let isUnifiOs: boolean = false;
 
 async function loginToUnifi() {
   const credentials = {
@@ -104,6 +105,7 @@ async function loginToUnifi() {
   try {
     const response = await unifiAxios.post("/api/auth/login", credentials);
     console.log("UniFi OS Login Successful");
+    isUnifiOs = true;
     
     // Capture CSRF token if present
     if (response.headers['x-csrf-token']) {
@@ -114,6 +116,7 @@ async function loginToUnifi() {
     return response.data;
   } catch (osError: any) {
     console.log(`UniFi OS login failed (${osError.response?.status}), trying legacy endpoint...`);
+    isUnifiOs = false;
     
     // Try legacy login
     try {
@@ -129,6 +132,13 @@ async function loginToUnifi() {
   }
 }
 
+// Helper to format MAC address (ensure colons)
+function formatMac(mac: string): string {
+  const cleanMac = mac.replace(/[^a-fA-F0-9]/g, '').toLowerCase();
+  if (cleanMac.length !== 12) return mac.toLowerCase();
+  return cleanMac.match(/.{1,2}/g)?.join(':') || mac.toLowerCase();
+}
+
 async function authorizeGuest(mac: string, minutes: number = 60) {
   try {
     if (!UNIFI_URL || !UNIFI_USER || !UNIFI_PASS) {
@@ -138,25 +148,50 @@ async function authorizeGuest(mac: string, minutes: number = 60) {
     // Always login first to ensure fresh session and cookies in the jar
     await loginToUnifi();
     
-    console.log(`Authorizing MAC ${mac} for ${minutes} minutes on site ${UNIFI_SITE}...`);
+    const formattedMac = formatMac(mac);
+    console.log(`Authorizing MAC ${formattedMac} for ${minutes} minutes on site ${UNIFI_SITE}...`);
     
     const headers: any = {};
     if (csrfToken) {
       headers['x-csrf-token'] = csrfToken;
     }
 
-    const response = await unifiAxios.post(`/api/s/${UNIFI_SITE}/cmd/stamgr`, {
-      cmd: "authorize-guest",
-      mac: mac.toLowerCase(),
-      minutes: minutes,
-    }, { headers });
-    
-    console.log("UniFi Authorization Response:", JSON.stringify(response.data));
-    return response.data;
+    // Try both paths if it's UniFi OS, or just the direct path if it's legacy
+    const pathsToTry = isUnifiOs 
+      ? [`/proxy/network/api/s/${UNIFI_SITE}/cmd/stamgr`, `/api/s/${UNIFI_SITE}/cmd/stamgr`]
+      : [`/api/s/${UNIFI_SITE}/cmd/stamgr`];
+
+    let lastError: any = null;
+    for (const endpoint of pathsToTry) {
+      try {
+        console.log(`Trying UniFi authorization at: ${endpoint}`);
+        const response = await unifiAxios.post(endpoint, {
+          cmd: "authorize-guest",
+          mac: formattedMac,
+          minutes: minutes,
+        }, { headers });
+        
+        console.log("UniFi Authorization Response:", JSON.stringify(response.data));
+        
+        if (response.data && response.data.meta && response.data.meta.rc === "ok") {
+          console.log("UniFi Authorization SUCCESSFUL");
+          return response.data;
+        } else {
+          const msg = response.data?.meta?.msg || "Unknown error from UniFi";
+          console.warn(`UniFi returned non-ok status at ${endpoint}: ${msg}`);
+          lastError = new Error(msg);
+        }
+      } catch (err: any) {
+        console.warn(`Failed authorization attempt at ${endpoint}:`, err.message);
+        lastError = err;
+      }
+    }
+
+    throw lastError || new Error("All authorization attempts failed");
   } catch (error: any) {
     const status = error.response?.status;
     const message = error.response?.data?.meta?.msg || error.message;
-    console.error(`UniFi Authorization Error [${status}]:`, message);
+    console.error(`UniFi Authorization Final Error [${status}]:`, message);
     throw new Error(`UniFi Authorization Failed: ${message}`);
   }
 }
@@ -240,17 +275,39 @@ app.get("/api/registrations", authenticateAdmin, async (req, res) => {
 });
 
 app.post("/api/authorize", async (req, res) => {
-  const { macAddress, minutes } = req.body;
+  const { macAddress, minutes, fullName, email, phoneNumber, apMac, ssid } = req.body;
   
   if (!macAddress) {
     return res.status(400).json({ error: "MAC Address is required" });
   }
 
   try {
+    // 1. Save to Supabase (Server-side has internet access)
+    // This avoids the "Failed to fetch" error on the client device
+    const { error: supabaseError } = await supabase
+      .from('registrations')
+      .insert([
+        {
+          full_name: fullName || 'Visitante',
+          email: email || 'n/a',
+          phone_number: phoneNumber || 'n/a',
+          mac_address: macAddress,
+          ap_mac: apMac || 'unknown',
+          ssid: ssid || 'unknown',
+        }
+      ]);
+
+    if (supabaseError) {
+      console.error('Supabase Registration Error:', supabaseError);
+      // We continue even if Supabase fails to at least try to authorize the user
+    }
+
+    // 2. Authorize in UniFi
     const result = await authorizeGuest(macAddress, minutes || 60);
     res.json({ success: true, result });
   } catch (error: any) {
-    res.status(500).json({ error: "Failed to authorize guest in UniFi", details: error.message });
+    console.error('Authorization Error:', error.message);
+    res.status(500).json({ error: "Falha ao autorizar no UniFi", details: error.message });
   }
 });
 

@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Wifi, CheckCircle2, AlertCircle, ArrowRight, Loader2, Lock, Smartphone, ShieldCheck, Headphones, Download, Table, Users, Search, RefreshCw, LogOut, Key, X } from 'lucide-react';
 import { BrowserRouter, Routes, Route, Link, useNavigate, Navigate } from 'react-router-dom';
-import { supabase } from './supabase';
-
 // Types
 interface RegistrationData {
   fullName: string;
@@ -421,28 +419,19 @@ function Portal() {
     setError(null);
 
     try {
-      // 1. Save to Supabase
-      const { error: supabaseError } = await supabase
-        .from('registrations')
-        .insert([
-          {
-            full_name: formData.fullName,
-            email: formData.email,
-            phone_number: formData.phoneNumber,
-            mac_address: params.id || 'unknown',
-            ap_mac: params.ap || 'unknown',
-            ssid: params.ssid || 'unknown',
-          }
-        ]);
-
-      if (supabaseError) throw new Error(supabaseError.message);
-
-      // 2. Call Backend API to authorize in UniFi
+      // Call Backend API to register AND authorize in UniFi
+      // We move registration to the server because the client might not have 
+      // internet access to reach Supabase directly while in the captive portal.
       const response = await fetch('/api/authorize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           macAddress: params.id || 'unknown',
+          fullName: formData.fullName,
+          email: formData.email,
+          phoneNumber: formData.phoneNumber,
+          apMac: params.ap || 'unknown',
+          ssid: params.ssid || 'unknown',
           minutes: 60, // Default 1 hour
         }),
       });
