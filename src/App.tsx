@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Wifi, CheckCircle2, AlertCircle, ArrowRight, Loader2, Lock, Smartphone, ShieldCheck, Headphones, Download, Table, Users, Search, RefreshCw } from 'lucide-react';
-import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
+import { Wifi, CheckCircle2, AlertCircle, ArrowRight, Loader2, Lock, Smartphone, ShieldCheck, Headphones, Download, Table, Users, Search, RefreshCw, LogOut, Key, X } from 'lucide-react';
+import { BrowserRouter, Routes, Route, Link, useNavigate, Navigate } from 'react-router-dom';
 import { supabase } from './supabase';
 
 // Types
@@ -29,17 +29,115 @@ interface RegistrationRecord {
   registered_at: string;
 }
 
+// --- Login Page Component ---
+function LoginPage() {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Falha no login');
+      }
+
+      navigate('/admin');
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 font-sans">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="max-w-md w-full bg-white rounded-[32px] shadow-2xl p-10 border border-slate-100"
+      >
+        <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-200">
+          <Lock className="text-white w-8 h-8" />
+        </div>
+        <h1 className="text-2xl font-bold text-center mb-2">Acesso Restrito</h1>
+        <p className="text-slate-500 text-center mb-8 text-sm">Entre com suas credenciais de administrador</p>
+
+        <form onSubmit={handleLogin} className="space-y-5">
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Usuário</label>
+            <input 
+              required
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="admin"
+              className="w-full px-5 py-3.5 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Senha</label>
+            <input 
+              required
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full px-5 py-3.5 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none"
+            />
+          </div>
+
+          {error && (
+            <div className="p-3.5 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-3">
+              <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+              <p className="text-xs text-red-600 font-medium">{error}</p>
+            </div>
+          )}
+
+          <button 
+            type="submit"
+            disabled={loading}
+            className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-2xl font-bold transition-all shadow-lg shadow-blue-200 flex items-center justify-center gap-2"
+          >
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'ENTRAR NO PAINEL'}
+          </button>
+        </form>
+      </motion.div>
+    </div>
+  );
+}
+
 // --- Admin Page Component ---
 function AdminPage() {
   const [registrations, setRegistrations] = useState<RegistrationRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isChangePassOpen, setIsChangePassOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [changingPass, setChangingPass] = useState(false);
+  const navigate = useNavigate();
 
   const fetchRegistrations = async () => {
     setLoading(true);
     try {
       const response = await fetch('/api/registrations');
+      if (response.status === 401) {
+        navigate('/login');
+        return;
+      }
       if (!response.ok) throw new Error('Falha ao carregar registros');
       const data = await response.json();
       setRegistrations(data);
@@ -53,6 +151,36 @@ function AdminPage() {
   useEffect(() => {
     fetchRegistrations();
   }, []);
+
+  const handleLogout = async () => {
+    await fetch('/api/admin/logout', { method: 'POST' });
+    navigate('/login');
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setChangingPass(true);
+    try {
+      const response = await fetch('/api/admin/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newPassword }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Falha ao alterar senha');
+      }
+
+      setIsChangePassOpen(false);
+      setNewPassword('');
+      alert('Senha alterada com sucesso!');
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setChangingPass(false);
+    }
+  };
 
   const exportToCSV = () => {
     if (registrations.length === 0) return;
@@ -105,7 +233,7 @@ function AdminPage() {
             </div>
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button 
               onClick={fetchRegistrations}
               className="p-2.5 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors"
@@ -114,9 +242,23 @@ function AdminPage() {
               <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
             </button>
             <button 
+              onClick={() => setIsChangePassOpen(true)}
+              className="p-2.5 text-slate-500 hover:bg-slate-100 rounded-xl transition-colors"
+              title="Alterar Senha"
+            >
+              <Key className="w-5 h-5" />
+            </button>
+            <button 
+              onClick={handleLogout}
+              className="p-2.5 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+              title="Sair"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+            <button 
               onClick={exportToCSV}
               disabled={registrations.length === 0}
-              className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-100"
+              className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-100 ml-2"
             >
               <Download className="w-4 h-4" />
               Exportar CSV
@@ -188,6 +330,63 @@ function AdminPage() {
           </div>
         </div>
       </main>
+
+      {/* Change Password Modal */}
+      <AnimatePresence>
+        {isChangePassOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsChangePassOpen(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-[32px] shadow-2xl p-8 border border-slate-100"
+            >
+              <button 
+                onClick={() => setIsChangePassOpen(false)}
+                className="absolute right-6 top-6 text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              
+              <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center mb-6">
+                <Key className="text-blue-600 w-6 h-6" />
+              </div>
+              
+              <h2 className="text-xl font-bold mb-2">Alterar Senha</h2>
+              <p className="text-slate-500 text-sm mb-6">Defina uma nova senha para o acesso administrativo.</p>
+              
+              <form onSubmit={handleChangePassword} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Nova Senha</label>
+                  <input 
+                    required
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Mínimo 6 caracteres"
+                    className="w-full px-5 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none"
+                  />
+                </div>
+                
+                <button 
+                  type="submit"
+                  disabled={changingPass}
+                  className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-2xl font-bold transition-all shadow-lg shadow-blue-100 flex items-center justify-center gap-2 mt-2"
+                >
+                  {changingPass ? <Loader2 className="w-5 h-5 animate-spin" /> : 'SALVAR NOVA SENHA'}
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -440,7 +639,9 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Portal />} />
+        <Route path="/login" element={<LoginPage />} />
         <Route path="/admin" element={<AdminPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );

@@ -8,6 +8,7 @@ import dotenv from "dotenv";
 import { createClient } from '@supabase/supabase-js';
 import { wrapper } from 'axios-cookiejar-support';
 import { CookieJar } from 'tough-cookie';
+import bcrypt from "bcryptjs";
 
 dotenv.config();
 
@@ -17,6 +18,10 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const app = express();
 const PORT = 3000;
 
+// Admin Default Credentials
+const DEFAULT_ADMIN_USER = "admin";
+const DEFAULT_ADMIN_PASS = "admin123";
+
 // Supabase Configuration
 const supabaseUrl = process.env.SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -24,6 +29,47 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 app.use(express.json());
 app.use(cookieParser());
+
+// Helper to get admin password from Supabase or default
+async function getAdminPassword() {
+  try {
+    const { data, error } = await supabase
+      .from('admin_config')
+      .select('password_hash')
+      .eq('key', 'admin_password')
+      .maybeSingle();
+
+    if (error || !data) {
+      // If not found, use default and potentially initialize it
+      const hash = await bcrypt.hash(DEFAULT_ADMIN_PASS, 10);
+      return hash;
+    }
+    return data.password_hash;
+  } catch (err) {
+    return await bcrypt.hash(DEFAULT_ADMIN_PASS, 10);
+  }
+}
+
+// Middleware to protect admin routes
+async function authenticateAdmin(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const token = req.cookies.admin_token;
+  if (!token) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    // Simple verification: token is just a hash of the current password for this demo
+    // In a real app, use JWT or session store
+    const currentHash = await getAdminPassword();
+    if (token === currentHash) {
+      next();
+    } else {
+      res.status(401).json({ error: "Invalid session" });
+    }
+  } catch (err) {
+    res.status(401).json({ error: "Unauthorized" });
+  }
+}
 
 // UniFi Controller Configuration
 const UNIFI_URL = process.env.UNIFI_CONTROLLER_URL?.replace(/\/$/, ""); // Remove trailing slash
@@ -116,7 +162,69 @@ async function authorizeGuest(mac: string, minutes: number = 60) {
 }
 
 // API Routes
-app.get("/api/registrations", async (req, res) => {
+app.post("/api/admin/login", async (req, res) => {
+  const { username, password } = req.body;
+
+  if (username !== DEFAULT_ADMIN_USER) {
+    return res.status(401).json({ error: "Usuário inválido" });
+  }
+
+  try {
+    const hash = await getAdminPassword();
+    const isValid = await bcrypt.compare(password, hash);
+
+    if (isValid) {
+      // Set cookie with the hash as a simple token
+      res.cookie('admin_token', hash, { 
+        httpOnly: true, 
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 24 * 60 * 60 * 1000 // 1 day
+      });
+      res.json({ success: true });
+    } else {
+      res.status(401).json({ error: "Senha incorreta" });
+    }
+  } catch (err) {
+    res.status(500).json({ error: "Erro no servidor" });
+  }
+});
+
+app.post("/api/admin/change-password", authenticateAdmin, async (req, res) => {
+  const { newPassword } = req.body;
+
+  if (!newPassword || newPassword.length < 6) {
+    return res.status(400).json({ error: "A senha deve ter pelo menos 6 caracteres" });
+  }
+
+  try {
+    const newHash = await bcrypt.hash(newPassword, 10);
+    
+    // Upsert into Supabase
+    const { error } = await supabase
+      .from('admin_config')
+      .upsert({ key: 'admin_password', password_hash: newHash }, { onConflict: 'key' });
+
+    if (error) throw error;
+
+    // Update session cookie with new hash
+    res.cookie('admin_token', newHash, { 
+      httpOnly: true, 
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 24 * 60 * 60 * 1000 
+    });
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: "Erro ao alterar senha", details: err.message });
+  }
+});
+
+app.post("/api/admin/logout", (req, res) => {
+  res.clearCookie('admin_token');
+  res.json({ success: true });
+});
+
+app.get("/api/registrations", authenticateAdmin, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('registrations')
