@@ -116,6 +116,21 @@ async function authorizeGuest(mac: string, minutes: number = 60) {
 }
 
 // API Routes
+app.get("/api/registrations", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('registrations')
+      .select('*')
+      .order('registered_at', { ascending: false });
+
+    if (error) throw error;
+    res.json(data);
+  } catch (error: any) {
+    console.error('Error fetching registrations:', error);
+    res.status(500).json({ error: "Failed to fetch registrations", details: error.message });
+  }
+});
+
 app.post("/api/authorize", async (req, res) => {
   const { macAddress, minutes } = req.body;
   
