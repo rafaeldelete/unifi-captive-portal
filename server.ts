@@ -6,6 +6,8 @@ import https from "https";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import { createClient } from '@supabase/supabase-js';
+import { wrapper } from 'axios-cookiejar-support';
+import { CookieJar } from 'tough-cookie';
 
 dotenv.config();
 
@@ -26,16 +28,21 @@ const UNIFI_USER = process.env.UNIFI_USERNAME;
 const UNIFI_PASS = process.env.UNIFI_PASSWORD;
 const UNIFI_SITE = process.env.UNIFI_SITE || "default";
 
-// Create an axios instance for UniFi with self-signed cert support if needed
-const unifiAxios = axios.create({
+// Create a Cookie Jar and wrap Axios
+const jar = new CookieJar();
+const unifiAxios = wrapper(axios.create({
   baseURL: UNIFI_URL,
-  httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+  jar,
   withCredentials: true,
+  httpsAgent: new https.Agent({ rejectUnauthorized: false }),
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   }
-});
+}));
+
+// Store CSRF token if provided by UniFi OS
+let csrfToken: string | null = null;
 
 async function loginToUnifi() {
   const credentials = {
@@ -43,13 +50,20 @@ async function loginToUnifi() {
     password: UNIFI_PASS,
   };
 
-  console.log(`Attempting UniFi login at ${UNIFI_URL}...`);
+  console.log(`Attempting UniFi login at ${UNIFI_URL} with Cookie Jar...`);
 
   // Try UniFi OS login first
   try {
     const response = await unifiAxios.post("/api/auth/login", credentials);
     console.log("UniFi OS Login Successful");
-    return response.headers["set-cookie"];
+    
+    // Capture CSRF token if present
+    if (response.headers['x-csrf-token']) {
+      csrfToken = response.headers['x-csrf-token'] as string;
+      console.log("Captured x-csrf-token from UniFi OS");
+    }
+    
+    return response.data;
   } catch (osError: any) {
     console.log(`UniFi OS login failed (${osError.response?.status}), trying legacy endpoint...`);
     
@@ -57,7 +71,7 @@ async function loginToUnifi() {
     try {
       const response = await unifiAxios.post("/api/login", credentials);
       console.log("Legacy UniFi Login Successful");
-      return response.headers["set-cookie"];
+      return response.data;
     } catch (legacyError: any) {
       const status = legacyError.response?.status || "No Status";
       const message = legacyError.response?.data?.meta?.msg || legacyError.message;
@@ -73,15 +87,21 @@ async function authorizeGuest(mac: string, minutes: number = 60) {
       throw new Error("UniFi environment variables (URL, Username, Password) are not configured.");
     }
 
+    // Always login first to ensure fresh session and cookies in the jar
     await loginToUnifi();
     
     console.log(`Authorizing MAC ${mac} for ${minutes} minutes on site ${UNIFI_SITE}...`);
     
+    const headers: any = {};
+    if (csrfToken) {
+      headers['x-csrf-token'] = csrfToken;
+    }
+
     const response = await unifiAxios.post(`/api/s/${UNIFI_SITE}/cmd/stamgr`, {
       cmd: "authorize-guest",
       mac: mac.toLowerCase(),
       minutes: minutes,
-    });
+    }, { headers });
     
     console.log("UniFi Authorization Response:", JSON.stringify(response.data));
     return response.data;

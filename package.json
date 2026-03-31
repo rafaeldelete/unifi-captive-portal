@@ -17,6 +17,7 @@
     "@types/cookie-parser": "^1.4.10",
     "@vitejs/plugin-react": "^5.0.4",
     "axios": "^1.14.0",
+    "axios-cookiejar-support": "^6.0.5",
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
@@ -25,6 +26,7 @@
     "motion": "^12.23.24",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "tough-cookie": "^6.0.1",
     "vite": "^6.2.0"
   },
   "devDependencies": {
