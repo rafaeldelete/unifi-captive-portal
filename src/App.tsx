@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Wifi, ShieldCheck, Smartphone, Headphones, CheckCircle2, AlertCircle, ArrowRight, Loader2, Lock } from 'lucide-react';
+import { Wifi, CheckCircle2, AlertCircle, ArrowRight, Loader2, Lock, Smartphone, ShieldCheck, Headphones } from 'lucide-react';
 import { supabase } from './supabase';
 
 // Types
@@ -236,27 +236,6 @@ export default function App() {
             Ao conectar, você concorda com nossos <span className="text-blue-600 font-medium cursor-pointer">Termos de Serviço</span> e <span className="text-blue-600 font-medium cursor-pointer">Política de Privacidade</span>.
           </p>
         </motion.div>
-
-        {/* Feature Grid */}
-        <div className="space-y-4 mb-12">
-          <div className="bg-slate-100/80 rounded-3xl p-8 border border-slate-200/50">
-            <ShieldCheck className="text-blue-600 w-8 h-8 mb-4" />
-            <h3 className="text-lg font-bold mb-2">Túnel Criptografado</h3>
-            <p className="text-slate-500 leading-relaxed">Proteção WPA3 de nível empresarial para todos os usuários.</p>
-          </div>
-
-          <div className="bg-blue-600 rounded-3xl p-8 text-white shadow-xl shadow-blue-100">
-            <Smartphone className="text-white/80 w-8 h-8 mb-4" />
-            <h3 className="text-lg font-bold mb-2">Multi-Dispositivo</h3>
-            <p className="text-white/70 leading-relaxed">Uma conta conecta seu telefone, laptop e tablet.</p>
-          </div>
-
-          <div className="bg-slate-100/80 rounded-3xl p-8 border border-slate-200/50">
-            <Headphones className="text-blue-600 w-8 h-8 mb-4" />
-            <h3 className="text-lg font-bold mb-2">Suporte 24/7</h3>
-            <p className="text-slate-500 leading-relaxed">Ajuda instantânea disponível diretamente do seu navegador.</p>
-          </div>
-        </div>
       </main>
 
       {/* Bottom Nav */}
