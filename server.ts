@@ -11,6 +11,9 @@ import { CookieJar } from 'tough-cookie';
 
 dotenv.config();
 
+// Allow self-signed certificates for UniFi Controller
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 const app = express();
 const PORT = 3000;
 
@@ -34,7 +37,6 @@ const unifiAxios = wrapper(axios.create({
   baseURL: UNIFI_URL,
   jar,
   withCredentials: true,
-  httpsAgent: new https.Agent({ rejectUnauthorized: false }),
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
