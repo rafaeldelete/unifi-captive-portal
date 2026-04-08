@@ -396,16 +396,20 @@ function Portal() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<any>(null);
+  const [showDebug, setShowDebug] = useState(false);
 
   useEffect(() => {
     // Parse URL parameters from UniFi redirect
     const urlParams = new URLSearchParams(window.location.search);
-    setParams({
-      id: urlParams.get('id'),
-      ap: urlParams.get('ap'),
-      ssid: urlParams.get('ssid'),
-      url: urlParams.get('url'),
-    });
+    const id = urlParams.get('id');
+    const ap = urlParams.get('ap');
+    const ssid = urlParams.get('ssid');
+    const url = urlParams.get('url');
+    const debug = urlParams.get('debug') === 'true';
+
+    setParams({ id, ap, ssid, url });
+    if (debug) setShowDebug(true);
   }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -417,11 +421,10 @@ function Portal() {
     e.preventDefault();
     setIsSubmitting(true);
     setError(null);
+    setDebugInfo(null);
 
     try {
       // Call Backend API to register AND authorize in UniFi
-      // We move registration to the server because the client might not have 
-      // internet access to reach Supabase directly while in the captive portal.
       const response = await fetch('/api/authorize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -436,9 +439,11 @@ function Portal() {
         }),
       });
 
+      const data = await response.json();
+      setDebugInfo(data);
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Falha ao autorizar no UniFi');
+        throw new Error(data.error || 'Falha ao autorizar no UniFi');
       }
 
       setIsSuccess(true);
@@ -447,7 +452,7 @@ function Portal() {
       if (params.url) {
         setTimeout(() => {
           window.location.href = params.url!;
-        }, 3000);
+        }, 5000);
       }
     } catch (err: any) {
       console.error('Registration Error:', err);
@@ -472,6 +477,16 @@ function Portal() {
           <p className="text-slate-600 mb-8 leading-relaxed">
             Seu acesso de alta velocidade está ativo. Você será redirecionado em breve para o seu destino.
           </p>
+          
+          {showDebug && debugInfo && (
+            <div className="mb-6 p-4 bg-slate-900 rounded-2xl text-left overflow-hidden">
+              <p className="text-[10px] font-mono text-blue-400 mb-2 uppercase tracking-widest">Debug Info (UniFi Response)</p>
+              <pre className="text-[10px] font-mono text-slate-300 overflow-x-auto">
+                {JSON.stringify(debugInfo, null, 2)}
+              </pre>
+            </div>
+          )}
+
           <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 mb-6">
             <p className="text-blue-700 text-sm font-medium">Sessão ativa por 60 minutos</p>
           </div>
@@ -496,13 +511,54 @@ function Portal() {
           </div>
           <span className="font-bold text-lg tracking-tight">Wi-Fi Grátis</span>
         </div>
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-full border border-blue-100">
-          <Lock className="w-3.5 h-3.5 text-blue-600" />
-          <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Protegendo...</span>
+        <div className="flex items-center gap-2">
+          {showDebug && (
+            <button 
+              onClick={() => setShowDebug(false)}
+              className="px-3 py-1.5 bg-slate-100 text-slate-500 rounded-full text-[10px] font-bold uppercase tracking-wider"
+            >
+              Hide Debug
+            </button>
+          )}
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-full border border-blue-100">
+            <Lock className="w-3.5 h-3.5 text-blue-600" />
+            <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Protegendo...</span>
+          </div>
         </div>
       </header>
 
       <main className="flex-1 max-w-lg mx-auto w-full px-6 py-8">
+        {/* Debug Section */}
+        {showDebug && (
+          <motion.div 
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            className="mb-8 p-6 bg-slate-900 rounded-3xl border border-slate-800 shadow-xl overflow-hidden"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-blue-400 font-mono text-xs uppercase tracking-widest">Diagnostic Console</h3>
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+            </div>
+            <div className="space-y-3 font-mono text-[11px]">
+              <div className="flex justify-between border-b border-slate-800 pb-2">
+                <span className="text-slate-500">CLIENT MAC (ID):</span>
+                <span className={params.id ? "text-green-400" : "text-red-400"}>{params.id || 'MISSING'}</span>
+              </div>
+              <div className="flex justify-between border-b border-slate-800 pb-2">
+                <span className="text-slate-500">AP MAC:</span>
+                <span className="text-slate-300">{params.ap || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between border-b border-slate-800 pb-2">
+                <span className="text-slate-500">SSID:</span>
+                <span className="text-slate-300">{params.ssid || 'N/A'}</span>
+              </div>
+              <div className="pt-2">
+                <p className="text-slate-500 mb-1">REDIRECT URL:</p>
+                <p className="text-slate-400 break-all bg-slate-800/50 p-2 rounded-lg">{params.url || 'None'}</p>
+              </div>
+            </div>
+          </motion.div>
+        )}
         {/* Hero Section */}
         <section className="mb-10">
           <p className="text-blue-600 font-bold text-xs uppercase tracking-widest mb-3">Conectividade Premium</p>

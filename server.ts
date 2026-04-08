@@ -304,10 +304,29 @@ app.post("/api/authorize", async (req, res) => {
 
     // 2. Authorize in UniFi
     const result = await authorizeGuest(macAddress, minutes || 60);
-    res.json({ success: true, result });
+    
+    res.json({ 
+      success: true, 
+      result,
+      debug: {
+        receivedMac: macAddress,
+        formattedMac: formatMac(macAddress),
+        site: UNIFI_SITE,
+        isUnifiOs: isUnifiOs,
+        timestamp: new Date().toISOString()
+      }
+    });
   } catch (error: any) {
     console.error('Authorization Error:', error.message);
-    res.status(500).json({ error: "Falha ao autorizar no UniFi", details: error.message });
+    res.status(500).json({ 
+      error: "Falha ao autorizar no UniFi", 
+      details: error.message,
+      debug: {
+        mac: macAddress,
+        site: UNIFI_SITE,
+        isUnifiOs: isUnifiOs
+      }
+    });
   }
 });
 
