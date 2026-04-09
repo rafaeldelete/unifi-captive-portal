@@ -39,6 +39,15 @@ interface Tenant {
   created_at: string;
 }
 
+interface AdminUser {
+  id: string;
+  username: string;
+  tenant_id: string | null;
+  is_superadmin: boolean;
+  created_at: string;
+  tenants?: { name: string };
+}
+
 // Helper to check if we are on the main domain (superadmin)
 const isMainDomain = () => {
   const host = window.location.hostname;
@@ -270,13 +279,22 @@ function AdminPage() {
               <Key className="w-5 h-5" />
             </button>
             {isMainDomain() && (
-              <Link 
-                to="/admin/tenants"
-                className="flex items-center gap-2 px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-slate-200 ml-2"
-              >
-                <Table className="w-4 h-4" />
-                Gerenciar Clientes
-              </Link>
+              <>
+                <Link 
+                  to="/admin/tenants"
+                  className="flex items-center gap-2 px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-slate-200 ml-2"
+                >
+                  <Table className="w-4 h-4" />
+                  Clientes
+                </Link>
+                <Link 
+                  to="/admin/admins"
+                  className="flex items-center gap-2 px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-slate-200 ml-2"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  Admins
+                </Link>
+              </>
             )}
             <button 
               onClick={handleLogout}
@@ -711,10 +729,293 @@ function TenantsPage() {
   );
 }
 
+// --- Admins Management Page ---
+function AdminsPage() {
+  const [admins, setAdmins] = useState<AdminUser[]>([]);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newAdmin, setNewAdmin] = useState({
+    username: '',
+    password: '',
+    tenant_id: '',
+    is_superadmin: false
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const navigate = useNavigate();
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const [adminsRes, tenantsRes] = await Promise.all([
+        fetch('/api/admin/admins'),
+        fetch('/api/admin/tenants')
+      ]);
+
+      if (adminsRes.status === 401) {
+        navigate('/login');
+        return;
+      }
+
+      if (!adminsRes.ok || !tenantsRes.ok) throw new Error('Falha ao carregar dados');
+      
+      const [adminsData, tenantsData] = await Promise.all([
+        adminsRes.json(),
+        tenantsRes.json()
+      ]);
+
+      setAdmins(adminsData);
+      setTenants(tenantsData);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isMainDomain()) {
+      navigate('/admin');
+      return;
+    }
+    fetchData();
+  }, []);
+
+  const handleAddAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const response = await fetch('/api/admin/admins', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newAdmin),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Falha ao criar administrador');
+      }
+
+      setIsAddModalOpen(false);
+      setNewAdmin({
+        username: '',
+        password: '',
+        tenant_id: '',
+        is_superadmin: false
+      });
+      fetchData();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteAdmin = async (id: string) => {
+    if (!confirm('Tem certeza que deseja excluir este administrador?')) return;
+    
+    try {
+      const response = await fetch(`/api/admin/admins/${id}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Falha ao excluir administrador');
+      fetchData();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
+      <header className="bg-white border-b border-slate-200 px-8 py-6 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Link to="/admin" className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
+              <ArrowRight className="w-5 h-5 rotate-180" />
+            </Link>
+            <div className="bg-slate-800 p-2 rounded-xl">
+              <ShieldCheck className="text-white w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight">Gerenciar Administradores</h1>
+              <p className="text-slate-500 text-sm">Controle quem acessa cada painel administrativo</p>
+            </div>
+          </div>
+          
+          <button 
+            onClick={() => setIsAddModalOpen(true)}
+            className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-100"
+          >
+            <Users className="w-4 h-4" />
+            Novo Admin
+          </button>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-8 py-10">
+        <div className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50/50 border-b border-slate-100">
+                <th className="px-8 py-5 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Usuário</th>
+                <th className="px-8 py-5 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Tipo / Cliente</th>
+                <th className="px-8 py-5 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Criado em</th>
+                <th className="px-8 py-5 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td colSpan={4} className="px-8 py-6"><div className="h-4 bg-slate-100 rounded w-full"></div></td>
+                  </tr>
+                ))
+              ) : admins.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-8 py-20 text-center text-slate-400 italic">Nenhum administrador cadastrado.</td>
+                </tr>
+              ) : (
+                admins.map((admin) => (
+                  <tr key={admin.id} className="hover:bg-slate-50/50 transition-colors group">
+                    <td className="px-8 py-5">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${admin.is_superadmin ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-600'}`}>
+                          {admin.username.charAt(0).toUpperCase()}
+                        </div>
+                        <span className="font-semibold">{admin.username}</span>
+                      </div>
+                    </td>
+                    <td className="px-8 py-5">
+                      {admin.is_superadmin ? (
+                        <span className="px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-[10px] font-bold uppercase tracking-wider border border-blue-100">Superadmin</span>
+                      ) : (
+                        <div className="flex flex-col">
+                          <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-[10px] font-bold uppercase tracking-wider border border-slate-200 w-fit mb-1">Admin Cliente</span>
+                          <span className="text-xs text-slate-500 font-medium">{admin.tenants?.name || 'Cliente não encontrado'}</span>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-8 py-5 text-sm text-slate-500">
+                      {new Date(admin.created_at).toLocaleDateString('pt-BR')}
+                    </td>
+                    <td className="px-8 py-5 text-right">
+                      <button 
+                        onClick={() => handleDeleteAdmin(admin.id)}
+                        className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </main>
+
+      {/* Add Admin Modal */}
+      <AnimatePresence>
+        {isAddModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAddModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-[32px] shadow-2xl p-8 border border-slate-100"
+            >
+              <button 
+                onClick={() => setIsAddModalOpen(false)}
+                className="absolute right-6 top-6 text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              
+              <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center mb-6">
+                <Users className="text-blue-600 w-6 h-6" />
+              </div>
+              
+              <h2 className="text-xl font-bold mb-2">Novo Administrador</h2>
+              <p className="text-slate-500 text-sm mb-8">Defina as credenciais e o nível de acesso.</p>
+              
+              <form onSubmit={handleAddAdmin} className="space-y-5">
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Usuário</label>
+                  <input 
+                    required
+                    type="text"
+                    value={newAdmin.username}
+                    onChange={(e) => setNewAdmin({...newAdmin, username: e.target.value})}
+                    placeholder="admin_hotel"
+                    className="w-full px-5 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Senha</label>
+                  <input 
+                    required
+                    type="password"
+                    value={newAdmin.password}
+                    onChange={(e) => setNewAdmin({...newAdmin, password: e.target.value})}
+                    placeholder="••••••••"
+                    className="w-full px-5 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none"
+                  />
+                </div>
+
+                <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <input 
+                    type="checkbox"
+                    id="is_superadmin"
+                    checked={newAdmin.is_superadmin}
+                    onChange={(e) => setNewAdmin({...newAdmin, is_superadmin: e.target.checked, tenant_id: e.target.checked ? '' : newAdmin.tenant_id})}
+                    className="w-5 h-5 rounded-lg border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <label htmlFor="is_superadmin" className="text-sm font-semibold text-slate-700 cursor-pointer">Superadmin (Acesso Global)</label>
+                </div>
+
+                {!newAdmin.is_superadmin && (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Vincular ao Cliente</label>
+                    <select 
+                      required
+                      value={newAdmin.tenant_id}
+                      onChange={(e) => setNewAdmin({...newAdmin, tenant_id: e.target.value})}
+                      className="w-full px-5 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none appearance-none"
+                    >
+                      <option value="">Selecione um cliente...</option>
+                      {tenants.map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                
+                <button 
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-2xl font-bold transition-all shadow-lg shadow-blue-100 flex items-center justify-center gap-2 mt-4"
+                >
+                  {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'CRIAR ADMINISTRADOR'}
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 // --- Portal Component (Original Home) ---
 function Portal() {
   const [params, setParams] = useState<PortalParams>({ id: null, ap: null, ssid: null, url: null });
-  const [tenantName, setTenantName] = useState('Wi-Fi Grátis');
+  const [tenantName, setTenantName] = useState('UnifiCaptive by CoreBase');
   const [formData, setFormData] = useState<RegistrationData>({ fullName: '', email: '', phoneNumber: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -744,7 +1045,7 @@ function Portal() {
     fetch('/api/tenant-info')
       .then(res => res.json())
       .then(data => setTenantName(data.name))
-      .catch(() => setTenantName('Wi-Fi Grátis'));
+      .catch(() => setTenantName('UnifiCaptive by CoreBase'));
   }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1046,6 +1347,7 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/admin/tenants" element={<TenantsPage />} />
+        <Route path="/admin/admins" element={<AdminsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

@@ -9,6 +9,7 @@ import { createClient } from '@supabase/supabase-js';
 import { wrapper } from 'axios-cookiejar-support';
 import { CookieJar } from 'tough-cookie';
 import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 
 dotenv.config();
 
@@ -17,8 +18,9 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const app = express();
 const PORT = 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'unifi-captive-secret-key-2026';
 
-// Admin Default Credentials
+// Admin Default Credentials (Fallback)
 const DEFAULT_ADMIN_USER = "admin";
 const DEFAULT_ADMIN_PASS = "admin123";
 
@@ -51,23 +53,35 @@ async function getAdminPassword() {
 }
 
 // Middleware to protect admin routes
-async function authenticateAdmin(req: express.Request, res: express.Response, next: express.NextFunction) {
+async function authenticateAdmin(req: any, res: express.Response, next: express.NextFunction) {
   const token = req.cookies.admin_token;
   if (!token) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
   try {
-    // Simple verification: token is just a hash of the current password for this demo
-    // In a real app, use JWT or session store
-    const currentHash = await getAdminPassword();
-    if (token === currentHash) {
-      next();
-    } else {
-      res.status(401).json({ error: "Invalid session" });
-    }
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    req.admin = decoded;
+    next();
   } catch (err) {
-    res.status(401).json({ error: "Unauthorized" });
+    res.status(401).json({ error: "Invalid session" });
+  }
+}
+
+// Middleware to protect Superadmin routes
+async function authenticateSuperadmin(req: any, res: express.Response, next: express.NextFunction) {
+  const token = req.cookies.admin_token;
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    if (!decoded.is_superadmin) {
+      return res.status(403).json({ error: "Forbidden: Superadmin access required" });
+    }
+    req.admin = decoded;
+    next();
+  } catch (err) {
+    res.status(401).json({ error: "Invalid session" });
   }
 }
 
@@ -96,55 +110,65 @@ async function getTenantBySubdomain(subdomain: string) {
 
 // Helper to get tenant from request
 async function getTenantFromReq(req: express.Request) {
-  const host = req.headers.host || '';
-  const baseDomain = process.env.BASE_DOMAIN || 'localhost';
+  // Try to get the real host from various headers used by proxies
+  const forwardedHost = req.headers['x-forwarded-host'] as string;
+  const originalHost = req.headers['x-original-host'] as string;
+  const hostHeader = req.headers.host || '';
+  
+  // Priority: x-forwarded-host > x-original-host > host
+  let host = (forwardedHost || originalHost || hostHeader).split(':')[0].toLowerCase();
+  
+  const baseDomain = (process.env.BASE_DOMAIN || 'unificaptive.com.br').toLowerCase();
   
   // Superadmin domain is now dash.baseDomain
   const superAdminDomain = `dash.${baseDomain}`;
   
-  // If the host is the superadmin domain or localhost, it's the main domain (no tenant)
-  if (host === superAdminDomain || host.startsWith('localhost')) {
+  // If we are on the main domain or localhost, it's the admin panel
+  if (
+    host === superAdminDomain || 
+    host === baseDomain ||
+    host === 'localhost' ||
+    host.includes('.run.app') || 
+    host.includes('googleusercontent.com')
+  ) {
     return null;
   }
 
-  // Extract subdomain: everything before the base domain
-  // Example: cliente1.unificaptive.com.br -> cliente1
-  const subdomain = host.replace(`.${baseDomain}`, '').split(':')[0];
+  let subdomain = '';
+  if (host.endsWith(`.${baseDomain}`)) {
+    subdomain = host.substring(0, host.length - baseDomain.length - 1);
+  } else if (host !== baseDomain && !host.includes('.')) {
+    subdomain = host;
+  }
   
-  // Ignore 'www' as a tenant
-  if (subdomain === 'www') return null;
+  if (!subdomain || subdomain === 'www') {
+    return null;
+  }
   
-  return await getTenantBySubdomain(subdomain);
+  const tenant = await getTenantBySubdomain(subdomain);
+  return tenant;
 }
 
 async function loginToUnifi(unifiAxios: any, credentials: any) {
-  console.log(`Attempting UniFi login at ${unifiAxios.defaults.baseURL} with Cookie Jar...`);
-
   // Try UniFi OS login first
   try {
     const response = await unifiAxios.post("/api/auth/login", credentials);
-    console.log("UniFi OS Login Successful");
     
     let csrfToken = null;
     // Capture CSRF token if present
     if (response.headers['x-csrf-token']) {
       csrfToken = response.headers['x-csrf-token'] as string;
-      console.log("Captured x-csrf-token from UniFi OS");
     }
     
     return { success: true, isUnifiOs: true, csrfToken };
   } catch (osError: any) {
-    console.log(`UniFi OS login failed (${osError.response?.status}), trying legacy endpoint...`);
-    
     // Try legacy login
     try {
       const response = await unifiAxios.post("/api/login", credentials);
-      console.log("Legacy UniFi Login Successful");
       return { success: true, isUnifiOs: false, csrfToken: null };
     } catch (legacyError: any) {
       const status = legacyError.response?.status || "No Status";
       const message = legacyError.response?.data?.meta?.msg || legacyError.message;
-      console.error(`All UniFi Login attempts failed. Last error [${status}]:`, message);
       throw new Error(`UniFi Login Failed: ${message} (Status ${status})`);
     }
   }
@@ -187,7 +211,6 @@ async function authorizeGuest(tenant: any, mac: string, minutes: number = 60) {
     });
     
     const formattedMac = formatMac(mac);
-    console.log(`Authorizing MAC ${formattedMac} for ${minutes} minutes on site ${unifiSite}...`);
     
     const headers: any = {};
     if (loginResult.csrfToken) {
@@ -202,25 +225,19 @@ async function authorizeGuest(tenant: any, mac: string, minutes: number = 60) {
     let lastError: any = null;
     for (const endpoint of pathsToTry) {
       try {
-        console.log(`Trying UniFi authorization at: ${endpoint}`);
         const response = await unifiAxios.post(endpoint, {
           cmd: "authorize-guest",
           mac: formattedMac,
           minutes: minutes,
         }, { headers });
         
-        console.log("UniFi Authorization Response:", JSON.stringify(response.data));
-        
         if (response.data && response.data.meta && response.data.meta.rc === "ok") {
-          console.log("UniFi Authorization SUCCESSFUL");
           return response.data;
         } else {
           const msg = response.data?.meta?.msg || "Unknown error from UniFi";
-          console.warn(`UniFi returned non-ok status at ${endpoint}: ${msg}`);
           lastError = new Error(msg);
         }
       } catch (err: any) {
-        console.warn(`Failed authorization attempt at ${endpoint}:`, err.message);
         lastError = err;
       }
     }
@@ -253,32 +270,59 @@ app.get(['/guest/s/:site', '/guest/s/:site/*'], (req, res) => {
 
 app.post("/api/admin/login", async (req, res) => {
   const { username, password } = req.body;
-
-  if (username !== DEFAULT_ADMIN_USER) {
-    return res.status(401).json({ error: "Usuário inválido" });
-  }
+  const tenant = await getTenantFromReq(req);
 
   try {
-    const hash = await getAdminPassword();
-    const isValid = await bcrypt.compare(password, hash);
+    // 1. Try to find user in admin_config
+    let query = supabase.from('admin_config').select('*').eq('username', username);
+    
+    if (tenant) {
+      query = query.eq('tenant_id', tenant.id);
+    } else {
+      query = query.is('tenant_id', null).eq('is_superadmin', true);
+    }
+
+    const { data: admin, error } = await query.maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    if (!admin) {
+      return res.status(401).json({ error: "Credenciais inválidas" });
+    }
+
+    const isValid = await bcrypt.compare(password, admin.password_hash);
 
     if (isValid) {
-      // Set cookie with the hash as a simple token
-      res.cookie('admin_token', hash, { 
+      const token = jwt.sign({ 
+        id: admin.id, 
+        username: admin.username, 
+        is_superadmin: admin.is_superadmin,
+        tenant_id: admin.tenant_id 
+      }, JWT_SECRET);
+
+      res.cookie('admin_token', token, { 
         httpOnly: true, 
         secure: process.env.NODE_ENV === 'production',
-        maxAge: 24 * 60 * 60 * 1000 // 1 day
+        maxAge: 24 * 60 * 60 * 1000 
       });
-      res.json({ success: true });
+      res.json({ success: true, is_superadmin: admin.is_superadmin });
     } else {
       res.status(401).json({ error: "Senha incorreta" });
     }
   } catch (err) {
+    console.error('Login error:', err);
     res.status(500).json({ error: "Erro no servidor" });
   }
 });
 
-app.post("/api/admin/change-password", authenticateAdmin, async (req, res) => {
+app.post("/api/admin/logout", (req, res) => {
+  res.clearCookie('admin_token');
+  res.json({ success: true });
+});
+
+app.post("/api/admin/change-password", authenticateAdmin, async (req: any, res) => {
   const { newPassword } = req.body;
 
   if (!newPassword || newPassword.length < 6) {
@@ -288,15 +332,22 @@ app.post("/api/admin/change-password", authenticateAdmin, async (req, res) => {
   try {
     const newHash = await bcrypt.hash(newPassword, 10);
     
-    // Upsert into Supabase
     const { error } = await supabase
       .from('admin_config')
-      .upsert({ key: 'admin_password', password_hash: newHash }, { onConflict: 'key' });
+      .update({ password_hash: newHash })
+      .eq('id', req.admin.id);
 
     if (error) throw error;
 
-    // Update session cookie with new hash
-    res.cookie('admin_token', newHash, { 
+    // Update session cookie with new token
+    const token = jwt.sign({ 
+      id: req.admin.id, 
+      username: req.admin.username, 
+      is_superadmin: req.admin.is_superadmin,
+      tenant_id: req.admin.tenant_id 
+    }, JWT_SECRET);
+
+    res.cookie('admin_token', token, { 
       httpOnly: true, 
       secure: process.env.NODE_ENV === 'production',
       maxAge: 24 * 60 * 60 * 1000 
@@ -308,36 +359,29 @@ app.post("/api/admin/change-password", authenticateAdmin, async (req, res) => {
   }
 });
 
-app.post("/api/admin/logout", (req, res) => {
-  res.clearCookie('admin_token');
-  res.json({ success: true });
-});
-
-app.get("/api/registrations", authenticateAdmin, async (req, res) => {
+app.get("/api/registrations", authenticateAdmin, async (req: any, res) => {
   try {
-    const tenant = await getTenantFromReq(req);
+    let query = supabase.from('registrations').select('*').order('registered_at', { ascending: false });
     
-    let query = supabase
-      .from('registrations')
-      .select('*')
-      .order('registered_at', { ascending: false });
-
-    if (tenant) {
-      query = query.eq('tenant_id', tenant.id);
+    // If not superadmin, filter by tenant_id
+    if (!req.admin.is_superadmin) {
+      if (!req.admin.tenant_id) {
+        return res.status(403).json({ error: "Acesso negado: Tenant não identificado" });
+      }
+      query = query.eq('tenant_id', req.admin.tenant_id);
     }
 
     const { data, error } = await query;
-
     if (error) throw error;
     res.json(data);
-  } catch (error: any) {
-    console.error('Error fetching registrations:', error);
-    res.status(500).json({ error: "Failed to fetch registrations", details: error.message });
+  } catch (err: any) {
+    console.error('Error fetching registrations:', err);
+    res.status(500).json({ error: "Erro ao buscar registros", details: err.message });
   }
 });
 
 // Tenant Management Routes (Superadmin)
-app.get("/api/admin/tenants", authenticateAdmin, async (req, res) => {
+app.get("/api/admin/tenants", authenticateSuperadmin, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('tenants')
@@ -351,7 +395,7 @@ app.get("/api/admin/tenants", authenticateAdmin, async (req, res) => {
   }
 });
 
-app.post("/api/admin/tenants", authenticateAdmin, async (req, res) => {
+app.post("/api/admin/tenants", authenticateSuperadmin, async (req, res) => {
   const { name, subdomain, unifi_url, unifi_user, unifi_pass, unifi_site } = req.body;
   
   try {
@@ -368,7 +412,7 @@ app.post("/api/admin/tenants", authenticateAdmin, async (req, res) => {
   }
 });
 
-app.delete("/api/admin/tenants/:id", authenticateAdmin, async (req, res) => {
+app.delete("/api/admin/tenants/:id", authenticateSuperadmin, async (req, res) => {
   try {
     const { error } = await supabase
       .from('tenants')
@@ -379,6 +423,48 @@ app.delete("/api/admin/tenants/:id", authenticateAdmin, async (req, res) => {
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: "Failed to delete tenant", details: error.message });
+  }
+});
+
+// Admin Management for Tenants (Superadmin only)
+app.get("/api/admin/admins", authenticateSuperadmin, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('admin_config')
+      .select('*, tenants(name)')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao buscar administradores" });
+  }
+});
+
+app.post("/api/admin/admins", authenticateSuperadmin, async (req, res) => {
+  try {
+    const { username, password, tenant_id, is_superadmin } = req.body;
+    const hash = await bcrypt.hash(password, 10);
+    const { data, error } = await supabase.from('admin_config').insert({
+      username,
+      password_hash: hash,
+      tenant_id: is_superadmin ? null : tenant_id,
+      is_superadmin: !!is_superadmin
+    }).select().single();
+    
+    if (error) throw error;
+    res.json(data);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete("/api/admin/admins/:id", authenticateSuperadmin, async (req, res) => {
+  try {
+    const { error } = await supabase.from('admin_config').delete().eq('id', req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao excluir administrador" });
   }
 });
 
@@ -394,19 +480,19 @@ app.post("/api/authorize", async (req, res) => {
     const tenant = await getTenantFromReq(req);
 
     // 1. Save to Supabase
+    const registrationData = {
+      full_name: fullName || 'Visitante',
+      email: email || 'n/a',
+      phone_number: phoneNumber || 'n/a',
+      mac_address: macAddress,
+      ap_mac: apMac || 'unknown',
+      ssid: ssid || 'unknown',
+      tenant_id: tenant?.id || null
+    };
+    
     const { error: supabaseError } = await supabase
       .from('registrations')
-      .insert([
-        {
-          full_name: fullName || 'Visitante',
-          email: email || 'n/a',
-          phone_number: phoneNumber || 'n/a',
-          mac_address: macAddress,
-          ap_mac: apMac || 'unknown',
-          ssid: ssid || 'unknown',
-          tenant_id: tenant?.id || null
-        }
-      ]);
+      .insert([registrationData]);
 
     if (supabaseError) {
       console.error('Supabase Registration Error:', supabaseError);
@@ -417,22 +503,13 @@ app.post("/api/authorize", async (req, res) => {
     
     res.json({ 
       success: true, 
-      result,
-      debug: {
-        tenant: tenant?.name || 'Default',
-        receivedMac: macAddress,
-        formattedMac: formatMac(macAddress),
-        timestamp: new Date().toISOString()
-      }
+      result
     });
   } catch (error: any) {
     console.error('Authorization Error:', error.message);
     res.status(500).json({ 
       error: "Falha ao autorizar no UniFi", 
-      details: error.message,
-      debug: {
-        mac: macAddress,
-      }
+      details: error.message
     });
   }
 });
@@ -441,12 +518,19 @@ app.post("/api/authorize", async (req, res) => {
 app.get("/api/tenant-info", async (req, res) => {
   try {
     const tenant = await getTenantFromReq(req);
+
     if (!tenant) {
-      return res.json({ name: "Wi-Fi Grátis" });
+      return res.json({ 
+        name: "UnifiCaptive by CoreBase"
+      });
     }
-    res.json({ name: tenant.name });
+    res.json({ 
+      name: tenant.name
+    });
   } catch (error) {
-    res.json({ name: "Wi-Fi Grátis" });
+    res.json({ 
+      name: "UnifiCaptive by CoreBase"
+    });
   }
 });
 
