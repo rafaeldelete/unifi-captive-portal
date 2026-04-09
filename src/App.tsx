@@ -397,7 +397,7 @@ function Portal() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<any>(null);
-  const [showDebug, setShowDebug] = useState(true);
+  const [showDebug, setShowDebug] = useState(false);
 
   useEffect(() => {
     // Parse URL parameters from UniFi redirect
@@ -410,7 +410,7 @@ function Portal() {
     const ap = urlParams.get('ap') || urlParams.get('ap_mac');
     const ssid = urlParams.get('ssid');
     const url = urlParams.get('url') || urlParams.get('redirect');
-    const debug = urlParams.get('debug') !== 'false';
+    const debug = urlParams.get('debug') === 'true';
 
     console.log('Extracted Params:', { id, ap, ssid, url });
 
@@ -518,14 +518,6 @@ function Portal() {
           <span className="font-bold text-lg tracking-tight">Wi-Fi Grátis</span>
         </div>
         <div className="flex items-center gap-2">
-          {showDebug && (
-            <button 
-              onClick={() => setShowDebug(false)}
-              className="px-3 py-1.5 bg-slate-100 text-slate-500 rounded-full text-[10px] font-bold uppercase tracking-wider"
-            >
-              Hide Debug
-            </button>
-          )}
           <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-full border border-blue-100">
             <Lock className="w-3.5 h-3.5 text-blue-600" />
             <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Protegendo...</span>
@@ -674,20 +666,6 @@ function Portal() {
               </div>
             )}
 
-            {!params.id && (
-              <button 
-                type="button"
-                onClick={() => {
-                  const manualMac = prompt('Insira o MAC Address manualmente (ex: aa:bb:cc:dd:ee:ff):');
-                  if (manualMac) setParams(prev => ({ ...prev, id: manualMac }));
-                }}
-                className="w-full py-3 bg-amber-50 border border-amber-200 text-amber-700 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 transition-all"
-              >
-                <Smartphone className="w-4 h-4" />
-                TESTE: INSERIR MAC MANUALMENTE
-              </button>
-            )}
-
             <button 
               type="submit"
               disabled={isSubmitting}
@@ -707,18 +685,6 @@ function Portal() {
           <p className="text-center text-[10px] text-slate-400 mt-8 leading-relaxed">
             Ao conectar, você concorda com nossos <span className="text-blue-600 font-medium cursor-pointer">Termos de Serviço</span> e <span className="text-blue-600 font-medium cursor-pointer">Política de Privacidade</span>.
           </p>
-
-          <div className="mt-12 pt-8 border-t border-slate-100 text-center">
-            <button 
-              onClick={() => setShowDebug(!showDebug)}
-              className="text-[10px] text-slate-400 hover:text-slate-600 uppercase tracking-widest font-bold transition-colors"
-            >
-              {showDebug ? 'Ocultar Console de Diagnóstico' : 'Mostrar Console de Diagnóstico'}
-            </button>
-            <p className="text-slate-300 text-[10px] mt-4">
-              &copy; {new Date().getFullYear()} CaptivePortal. Todos os direitos reservados.
-            </p>
-          </div>
         </motion.div>
       </main>
 
