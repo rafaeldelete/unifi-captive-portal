@@ -205,10 +205,12 @@ app.use((req, res, next) => {
 });
 
 // Handle UniFi legacy subpaths by redirecting to root with query params
-app.get(['/guest/s/:site/', '/guest/s/:site/*'], (req, res) => {
-  const query = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
-  console.log(`[REDIRECT] Legacy UniFi path detected: ${req.url}. Redirecting to /${query}`);
-  res.redirect(301, `/${query}`);
+app.get(['/guest/s/:site', '/guest/s/:site/*'], (req, res) => {
+  const urlParts = req.url.split('?');
+  const query = urlParts.length > 1 ? `?${urlParts[1]}` : '';
+  const target = `/${query}`;
+  console.log(`[REDIRECT] UniFi path detected: ${req.url} -> Redirecting to: ${target}`);
+  res.redirect(302, target);
 });
 
 app.post("/api/admin/login", async (req, res) => {

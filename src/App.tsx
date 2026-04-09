@@ -403,12 +403,16 @@ function Portal() {
     // Parse URL parameters from UniFi redirect
     const urlParams = new URLSearchParams(window.location.search);
     
+    console.log('Parsing URL Params. Search:', window.location.search);
+    
     // UniFi uses different parameter names depending on the version
     const id = urlParams.get('id') || urlParams.get('mac') || urlParams.get('client_mac');
     const ap = urlParams.get('ap') || urlParams.get('ap_mac');
     const ssid = urlParams.get('ssid');
     const url = urlParams.get('url') || urlParams.get('redirect');
     const debug = urlParams.get('debug') !== 'false';
+
+    console.log('Extracted Params:', { id, ap, ssid, url });
 
     setParams({ id, ap, ssid, url });
     if (debug) setShowDebug(true);
@@ -573,6 +577,24 @@ function Portal() {
               <div className="pt-2">
                 <p className="text-slate-500 mb-1">REDIRECT URL (DESTINATION):</p>
                 <p className="text-slate-400 break-all bg-slate-800/50 p-2 rounded-lg">{params.url || 'None'}</p>
+              </div>
+              
+              <div className="pt-4 flex gap-2">
+                <button 
+                  onClick={() => {
+                    const manualMac = prompt('Insira o MAC Address manualmente (ex: aa:bb:cc:dd:ee:ff):');
+                    if (manualMac) setParams(prev => ({ ...prev, id: manualMac }));
+                  }}
+                  className="flex-1 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded-xl text-[10px] font-bold uppercase transition-colors border border-blue-600/30"
+                >
+                  Override MAC
+                </button>
+                <button 
+                  onClick={() => window.location.reload()}
+                  className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-xl text-[10px] font-bold uppercase transition-colors border border-slate-700"
+                >
+                  Reload Page
+                </button>
               </div>
             </div>
           </motion.div>
