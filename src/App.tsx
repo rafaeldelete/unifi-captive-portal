@@ -397,7 +397,7 @@ function Portal() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<any>(null);
-  const [showDebug, setShowDebug] = useState(false);
+  const [showDebug, setShowDebug] = useState(true);
 
   useEffect(() => {
     // Parse URL parameters from UniFi redirect
@@ -695,6 +695,18 @@ function Portal() {
           <p className="text-center text-[10px] text-slate-400 mt-8 leading-relaxed">
             Ao conectar, você concorda com nossos <span className="text-blue-600 font-medium cursor-pointer">Termos de Serviço</span> e <span className="text-blue-600 font-medium cursor-pointer">Política de Privacidade</span>.
           </p>
+
+          <div className="mt-12 pt-8 border-t border-slate-100 text-center">
+            <button 
+              onClick={() => setShowDebug(!showDebug)}
+              className="text-[10px] text-slate-400 hover:text-slate-600 uppercase tracking-widest font-bold transition-colors"
+            >
+              {showDebug ? 'Ocultar Console de Diagnóstico' : 'Mostrar Console de Diagnóstico'}
+            </button>
+            <p className="text-slate-300 text-[10px] mt-4">
+              &copy; {new Date().getFullYear()} CaptivePortal. Todos os direitos reservados.
+            </p>
+          </div>
         </motion.div>
       </main>
 
