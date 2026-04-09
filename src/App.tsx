@@ -402,11 +402,13 @@ function Portal() {
   useEffect(() => {
     // Parse URL parameters from UniFi redirect
     const urlParams = new URLSearchParams(window.location.search);
-    const id = urlParams.get('id');
-    const ap = urlParams.get('ap');
+    
+    // UniFi uses different parameter names depending on the version
+    const id = urlParams.get('id') || urlParams.get('mac') || urlParams.get('client_mac');
+    const ap = urlParams.get('ap') || urlParams.get('ap_mac');
     const ssid = urlParams.get('ssid');
-    const url = urlParams.get('url');
-    const debug = urlParams.get('debug') === 'true';
+    const url = urlParams.get('url') || urlParams.get('redirect');
+    const debug = urlParams.get('debug') !== 'false';
 
     setParams({ id, ap, ssid, url });
     if (debug) setShowDebug(true);
@@ -553,7 +555,13 @@ function Portal() {
                 <span className="text-slate-300">{params.ssid || 'N/A'}</span>
               </div>
               <div className="pt-2">
-                <p className="text-slate-500 mb-1">REDIRECT URL:</p>
+                <p className="text-slate-500 mb-1">FULL URL:</p>
+                <p className="text-[9px] text-slate-400 break-all bg-slate-800/50 p-2 rounded-lg font-mono leading-tight">
+                  {window.location.href}
+                </p>
+              </div>
+              <div className="pt-2">
+                <p className="text-slate-500 mb-1">REDIRECT URL (DESTINATION):</p>
                 <p className="text-slate-400 break-all bg-slate-800/50 p-2 rounded-lg">{params.url || 'None'}</p>
               </div>
             </div>
