@@ -543,6 +543,10 @@ function Portal() {
             </div>
             <div className="space-y-3 font-mono text-[11px]">
               <div className="flex justify-between border-b border-slate-800 pb-2">
+                <span className="text-slate-500">PATHNAME:</span>
+                <span className="text-blue-400">{window.location.pathname}</span>
+              </div>
+              <div className="flex justify-between border-b border-slate-800 pb-2">
                 <span className="text-slate-500">CLIENT MAC (ID):</span>
                 <span className={params.id ? "text-green-400" : "text-red-400"}>{params.id || 'MISSING'}</span>
               </div>

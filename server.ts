@@ -197,11 +197,18 @@ async function authorizeGuest(mac: string, minutes: number = 60) {
 }
 
 // API Routes
+// Logging Middleware for all requests
 app.use((req, res, next) => {
-  if (req.path === '/' || req.path === '/index.html') {
-    console.log(`[PORTAL ACCESS] Path: ${req.path} | Query: ${JSON.stringify(req.query)}`);
-  }
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] ${req.method} ${req.url}`);
   next();
+});
+
+// Handle UniFi legacy subpaths by redirecting to root with query params
+app.get(['/guest/s/:site/', '/guest/s/:site/*'], (req, res) => {
+  const query = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
+  console.log(`[REDIRECT] Legacy UniFi path detected: ${req.url}. Redirecting to /${query}`);
+  res.redirect(301, `/${query}`);
 });
 
 app.post("/api/admin/login", async (req, res) => {
