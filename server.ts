@@ -71,58 +71,76 @@ async function authenticateAdmin(req: express.Request, res: express.Response, ne
   }
 }
 
-// UniFi Controller Configuration
-const UNIFI_URL = process.env.UNIFI_CONTROLLER_URL?.replace(/\/$/, ""); // Remove trailing slash
-const UNIFI_USER = process.env.UNIFI_USERNAME;
-const UNIFI_PASS = process.env.UNIFI_PASSWORD;
-const UNIFI_SITE = process.env.UNIFI_SITE || "default";
+// UniFi Controller Configuration (Legacy Defaults - will be overridden by Tenant config)
+let DEFAULT_UNIFI_URL = process.env.UNIFI_CONTROLLER_URL?.replace(/\/$/, ""); 
+let DEFAULT_UNIFI_USER = process.env.UNIFI_USERNAME;
+let DEFAULT_UNIFI_PASS = process.env.UNIFI_PASSWORD;
+let DEFAULT_UNIFI_SITE = process.env.UNIFI_SITE || "default";
 
-// Create a Cookie Jar and wrap Axios
-const jar = new CookieJar();
-const unifiAxios = wrapper(axios.create({
-  baseURL: UNIFI_URL,
-  jar,
-  withCredentials: true,
-  headers: {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
+// Helper to get tenant by subdomain
+async function getTenantBySubdomain(subdomain: string) {
+  if (!subdomain || subdomain === 'www' || subdomain === 'localhost') return null;
+  
+  const { data, error } = await supabase
+    .from('tenants')
+    .select('*')
+    .eq('subdomain', subdomain)
+    .maybeSingle();
+    
+  if (error) {
+    console.error('Error fetching tenant:', error);
+    return null;
   }
-}));
+  return data;
+}
 
-// Store CSRF token and UniFi OS flag
-let csrfToken: string | null = null;
-let isUnifiOs: boolean = false;
+// Helper to get tenant from request
+async function getTenantFromReq(req: express.Request) {
+  const host = req.headers.host || '';
+  const baseDomain = process.env.BASE_DOMAIN || 'localhost';
+  
+  // Superadmin domain is now dash.baseDomain
+  const superAdminDomain = `dash.${baseDomain}`;
+  
+  // If the host is the superadmin domain or localhost, it's the main domain (no tenant)
+  if (host === superAdminDomain || host.startsWith('localhost')) {
+    return null;
+  }
 
-async function loginToUnifi() {
-  const credentials = {
-    username: UNIFI_USER,
-    password: UNIFI_PASS,
-  };
+  // Extract subdomain: everything before the base domain
+  // Example: cliente1.unificaptive.com.br -> cliente1
+  const subdomain = host.replace(`.${baseDomain}`, '').split(':')[0];
+  
+  // Ignore 'www' as a tenant
+  if (subdomain === 'www') return null;
+  
+  return await getTenantBySubdomain(subdomain);
+}
 
-  console.log(`Attempting UniFi login at ${UNIFI_URL} with Cookie Jar...`);
+async function loginToUnifi(unifiAxios: any, credentials: any) {
+  console.log(`Attempting UniFi login at ${unifiAxios.defaults.baseURL} with Cookie Jar...`);
 
   // Try UniFi OS login first
   try {
     const response = await unifiAxios.post("/api/auth/login", credentials);
     console.log("UniFi OS Login Successful");
-    isUnifiOs = true;
     
+    let csrfToken = null;
     // Capture CSRF token if present
     if (response.headers['x-csrf-token']) {
       csrfToken = response.headers['x-csrf-token'] as string;
       console.log("Captured x-csrf-token from UniFi OS");
     }
     
-    return response.data;
+    return { success: true, isUnifiOs: true, csrfToken };
   } catch (osError: any) {
     console.log(`UniFi OS login failed (${osError.response?.status}), trying legacy endpoint...`);
-    isUnifiOs = false;
     
     // Try legacy login
     try {
       const response = await unifiAxios.post("/api/login", credentials);
       console.log("Legacy UniFi Login Successful");
-      return response.data;
+      return { success: true, isUnifiOs: false, csrfToken: null };
     } catch (legacyError: any) {
       const status = legacyError.response?.status || "No Status";
       const message = legacyError.response?.data?.meta?.msg || legacyError.message;
@@ -139,27 +157,47 @@ function formatMac(mac: string): string {
   return cleanMac.match(/.{1,2}/g)?.join(':') || mac.toLowerCase();
 }
 
-async function authorizeGuest(mac: string, minutes: number = 60) {
+async function authorizeGuest(tenant: any, mac: string, minutes: number = 60) {
   try {
-    if (!UNIFI_URL || !UNIFI_USER || !UNIFI_PASS) {
-      throw new Error("UniFi environment variables (URL, Username, Password) are not configured.");
+    const unifiUrl = tenant?.unifi_url || DEFAULT_UNIFI_URL;
+    const unifiUser = tenant?.unifi_user || DEFAULT_UNIFI_USER;
+    const unifiPass = tenant?.unifi_pass || DEFAULT_UNIFI_PASS;
+    const unifiSite = tenant?.unifi_site || DEFAULT_UNIFI_SITE;
+
+    if (!unifiUrl || !unifiUser || !unifiPass) {
+      throw new Error("UniFi configuration is missing for this tenant.");
     }
 
+    // Create a fresh Cookie Jar and Axios instance for this tenant/request
+    const jar = new CookieJar();
+    const unifiAxios = wrapper(axios.create({
+      baseURL: unifiUrl,
+      jar,
+      withCredentials: true,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      }
+    }));
+
     // Always login first to ensure fresh session and cookies in the jar
-    await loginToUnifi();
+    const loginResult = await loginToUnifi(unifiAxios, {
+      username: unifiUser,
+      password: unifiPass
+    });
     
     const formattedMac = formatMac(mac);
-    console.log(`Authorizing MAC ${formattedMac} for ${minutes} minutes on site ${UNIFI_SITE}...`);
+    console.log(`Authorizing MAC ${formattedMac} for ${minutes} minutes on site ${unifiSite}...`);
     
     const headers: any = {};
-    if (csrfToken) {
-      headers['x-csrf-token'] = csrfToken;
+    if (loginResult.csrfToken) {
+      headers['x-csrf-token'] = loginResult.csrfToken;
     }
 
     // Try both paths if it's UniFi OS, or just the direct path if it's legacy
-    const pathsToTry = isUnifiOs 
-      ? [`/proxy/network/api/s/${UNIFI_SITE}/cmd/stamgr`, `/api/s/${UNIFI_SITE}/cmd/stamgr`]
-      : [`/api/s/${UNIFI_SITE}/cmd/stamgr`];
+    const pathsToTry = loginResult.isUnifiOs 
+      ? [`/proxy/network/api/s/${unifiSite}/cmd/stamgr`, `/api/s/${unifiSite}/cmd/stamgr`]
+      : [`/api/s/${unifiSite}/cmd/stamgr`];
 
     let lastError: any = null;
     for (const endpoint of pathsToTry) {
@@ -277,16 +315,70 @@ app.post("/api/admin/logout", (req, res) => {
 
 app.get("/api/registrations", authenticateAdmin, async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const tenant = await getTenantFromReq(req);
+    
+    let query = supabase
       .from('registrations')
       .select('*')
       .order('registered_at', { ascending: false });
+
+    if (tenant) {
+      query = query.eq('tenant_id', tenant.id);
+    }
+
+    const { data, error } = await query;
 
     if (error) throw error;
     res.json(data);
   } catch (error: any) {
     console.error('Error fetching registrations:', error);
     res.status(500).json({ error: "Failed to fetch registrations", details: error.message });
+  }
+});
+
+// Tenant Management Routes (Superadmin)
+app.get("/api/admin/tenants", authenticateAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('tenants')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    res.json(data);
+  } catch (error: any) {
+    res.status(500).json({ error: "Failed to fetch tenants", details: error.message });
+  }
+});
+
+app.post("/api/admin/tenants", authenticateAdmin, async (req, res) => {
+  const { name, subdomain, unifi_url, unifi_user, unifi_pass, unifi_site } = req.body;
+  
+  try {
+    const { data, error } = await supabase
+      .from('tenants')
+      .insert([{ name, subdomain, unifi_url, unifi_user, unifi_pass, unifi_site: unifi_site || 'default' }])
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (error: any) {
+    res.status(500).json({ error: "Failed to create tenant", details: error.message });
+  }
+});
+
+app.delete("/api/admin/tenants/:id", authenticateAdmin, async (req, res) => {
+  try {
+    const { error } = await supabase
+      .from('tenants')
+      .delete()
+      .eq('id', req.params.id);
+
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: "Failed to delete tenant", details: error.message });
   }
 });
 
@@ -298,8 +390,10 @@ app.post("/api/authorize", async (req, res) => {
   }
 
   try {
-    // 1. Save to Supabase (Server-side has internet access)
-    // This avoids the "Failed to fetch" error on the client device
+    // Identify tenant from request
+    const tenant = await getTenantFromReq(req);
+
+    // 1. Save to Supabase
     const { error: supabaseError } = await supabase
       .from('registrations')
       .insert([
@@ -310,25 +404,24 @@ app.post("/api/authorize", async (req, res) => {
           mac_address: macAddress,
           ap_mac: apMac || 'unknown',
           ssid: ssid || 'unknown',
+          tenant_id: tenant?.id || null
         }
       ]);
 
     if (supabaseError) {
       console.error('Supabase Registration Error:', supabaseError);
-      // We continue even if Supabase fails to at least try to authorize the user
     }
 
     // 2. Authorize in UniFi
-    const result = await authorizeGuest(macAddress, minutes || 60);
+    const result = await authorizeGuest(tenant, macAddress, minutes || 60);
     
     res.json({ 
       success: true, 
       result,
       debug: {
+        tenant: tenant?.name || 'Default',
         receivedMac: macAddress,
         formattedMac: formatMac(macAddress),
-        site: UNIFI_SITE,
-        isUnifiOs: isUnifiOs,
         timestamp: new Date().toISOString()
       }
     });
@@ -339,10 +432,21 @@ app.post("/api/authorize", async (req, res) => {
       details: error.message,
       debug: {
         mac: macAddress,
-        site: UNIFI_SITE,
-        isUnifiOs: isUnifiOs
       }
     });
+  }
+});
+
+// Public endpoint to get tenant info (for the portal UI)
+app.get("/api/tenant-info", async (req, res) => {
+  try {
+    const tenant = await getTenantFromReq(req);
+    if (!tenant) {
+      return res.json({ name: "Wi-Fi Grátis" });
+    }
+    res.json({ name: tenant.name });
+  } catch (error) {
+    res.json({ name: "Wi-Fi Grátis" });
   }
 });
 

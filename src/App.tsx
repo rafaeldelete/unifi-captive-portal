@@ -25,7 +25,30 @@ interface RegistrationRecord {
   ap_mac: string;
   ssid: string;
   registered_at: string;
+  tenant_id?: string;
 }
+
+interface Tenant {
+  id: string;
+  name: string;
+  subdomain: string;
+  unifi_url: string;
+  unifi_user: string;
+  unifi_pass: string;
+  unifi_site: string;
+  created_at: string;
+}
+
+// Helper to check if we are on the main domain (superadmin)
+const isMainDomain = () => {
+  const host = window.location.hostname;
+  const baseDomain = import.meta.env.VITE_BASE_DOMAIN || 'localhost';
+  
+  // Superadmin domain is now dash.baseDomain
+  const superAdminDomain = `dash.${baseDomain}`;
+  
+  return host === superAdminDomain || host.includes('localhost');
+};
 
 // --- Login Page Component ---
 function LoginPage() {
@@ -246,6 +269,15 @@ function AdminPage() {
             >
               <Key className="w-5 h-5" />
             </button>
+            {isMainDomain() && (
+              <Link 
+                to="/admin/tenants"
+                className="flex items-center gap-2 px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-slate-200 ml-2"
+              >
+                <Table className="w-4 h-4" />
+                Gerenciar Clientes
+              </Link>
+            )}
             <button 
               onClick={handleLogout}
               className="p-2.5 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
@@ -389,9 +421,300 @@ function AdminPage() {
   );
 }
 
+// --- Tenants Management Page ---
+function TenantsPage() {
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newTenant, setNewTenant] = useState({
+    name: '',
+    subdomain: '',
+    unifi_url: '',
+    unifi_user: '',
+    unifi_pass: '',
+    unifi_site: 'default'
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const navigate = useNavigate();
+
+  const fetchTenants = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/admin/tenants');
+      if (response.status === 401) {
+        navigate('/login');
+        return;
+      }
+      if (!response.ok) throw new Error('Falha ao carregar clientes');
+      const data = await response.json();
+      setTenants(data);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isMainDomain()) {
+      navigate('/admin');
+      return;
+    }
+    fetchTenants();
+  }, []);
+
+  const handleAddTenant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const response = await fetch('/api/admin/tenants', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newTenant),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Falha ao criar cliente');
+      }
+
+      setIsAddModalOpen(false);
+      setNewTenant({
+        name: '',
+        subdomain: '',
+        unifi_url: '',
+        unifi_user: '',
+        unifi_pass: '',
+        unifi_site: 'default'
+      });
+      fetchTenants();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteTenant = async (id: string) => {
+    if (!confirm('Tem certeza que deseja excluir este cliente? Todos os registros associados podem ficar órfãos.')) return;
+    
+    try {
+      const response = await fetch(`/api/admin/tenants/${id}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Falha ao excluir cliente');
+      fetchTenants();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
+      <header className="bg-white border-b border-slate-200 px-8 py-6 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Link to="/admin" className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
+              <ArrowRight className="w-5 h-5 rotate-180" />
+            </Link>
+            <div className="bg-slate-800 p-2 rounded-xl">
+              <Table className="text-white w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight">Gerenciar Clientes</h1>
+              <p className="text-slate-500 text-sm">Configure as controladoras UniFi por subdomínio</p>
+            </div>
+          </div>
+          
+          <button 
+            onClick={() => setIsAddModalOpen(true)}
+            className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-100"
+          >
+            <Users className="w-4 h-4" />
+            Novo Cliente
+          </button>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-8 py-10">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {loading ? (
+            Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="bg-white p-6 rounded-3xl border border-slate-200 animate-pulse h-48"></div>
+            ))
+          ) : tenants.length === 0 ? (
+            <div className="col-span-full py-20 text-center text-slate-400 italic bg-white rounded-3xl border border-slate-200">
+              Nenhum cliente cadastrado.
+            </div>
+          ) : (
+            tenants.map((tenant) => (
+              <div key={tenant.id} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-all group">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="font-bold text-lg text-slate-900">{tenant.name}</h3>
+                    <p className="text-blue-600 text-xs font-mono font-bold">{tenant.subdomain}.seudominio.com</p>
+                  </div>
+                  <button 
+                    onClick={() => handleDeleteTenant(tenant.id)}
+                    className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                
+                <div className="space-y-2 mb-6">
+                  <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                    <Wifi className="w-3 h-3" />
+                    <span className="truncate">{tenant.unifi_url}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                    <Smartphone className="w-3 h-3" />
+                    <span>Site: {tenant.unifi_site}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                  <span className="text-[10px] text-slate-400">Criado em {new Date(tenant.created_at).toLocaleDateString('pt-BR')}</span>
+                  <a 
+                    href={`http://${tenant.subdomain}.localhost:3000`} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-bold text-blue-600 hover:underline"
+                  >
+                    Ver Portal
+                  </a>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </main>
+
+      {/* Add Tenant Modal */}
+      <AnimatePresence>
+        {isAddModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAddModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-2xl bg-white rounded-[32px] shadow-2xl p-8 border border-slate-100 overflow-y-auto max-h-[90vh]"
+            >
+              <button 
+                onClick={() => setIsAddModalOpen(false)}
+                className="absolute right-6 top-6 text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              
+              <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center mb-6">
+                <Users className="text-blue-600 w-6 h-6" />
+              </div>
+              
+              <h2 className="text-xl font-bold mb-2">Novo Cliente (Tenant)</h2>
+              <p className="text-slate-500 text-sm mb-8">Configure as credenciais da controladora UniFi para este cliente.</p>
+              
+              <form onSubmit={handleAddTenant} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Nome do Cliente</label>
+                  <input 
+                    required
+                    type="text"
+                    value={newTenant.name}
+                    onChange={(e) => setNewTenant({...newTenant, name: e.target.value})}
+                    placeholder="Ex: Hotel Central"
+                    className="w-full px-5 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Subdomínio</label>
+                  <div className="relative">
+                    <input 
+                      required
+                      type="text"
+                      value={newTenant.subdomain}
+                      onChange={(e) => setNewTenant({...newTenant, subdomain: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')})}
+                      placeholder="hotel-central"
+                      className="w-full px-5 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none pr-24"
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">.wifi.com</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Site UniFi</label>
+                  <input 
+                    required
+                    type="text"
+                    value={newTenant.unifi_site}
+                    onChange={(e) => setNewTenant({...newTenant, unifi_site: e.target.value})}
+                    placeholder="default"
+                    className="w-full px-5 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">URL da Controladora UniFi</label>
+                  <input 
+                    required
+                    type="url"
+                    value={newTenant.unifi_url}
+                    onChange={(e) => setNewTenant({...newTenant, unifi_url: e.target.value})}
+                    placeholder="https://1.2.3.4:8443"
+                    className="w-full px-5 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Usuário UniFi</label>
+                  <input 
+                    required
+                    type="text"
+                    value={newTenant.unifi_user}
+                    onChange={(e) => setNewTenant({...newTenant, unifi_user: e.target.value})}
+                    placeholder="admin_api"
+                    className="w-full px-5 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Senha UniFi</label>
+                  <input 
+                    required
+                    type="password"
+                    value={newTenant.unifi_pass}
+                    onChange={(e) => setNewTenant({...newTenant, unifi_pass: e.target.value})}
+                    placeholder="••••••••"
+                    className="w-full px-5 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none"
+                  />
+                </div>
+                
+                <button 
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-2xl font-bold transition-all shadow-lg shadow-blue-100 flex items-center justify-center gap-2 mt-4 md:col-span-2"
+                >
+                  {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'CADASTRAR CLIENTE'}
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 // --- Portal Component (Original Home) ---
 function Portal() {
   const [params, setParams] = useState<PortalParams>({ id: null, ap: null, ssid: null, url: null });
+  const [tenantName, setTenantName] = useState('Wi-Fi Grátis');
   const [formData, setFormData] = useState<RegistrationData>({ fullName: '', email: '', phoneNumber: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -416,6 +739,12 @@ function Portal() {
 
     setParams({ id, ap, ssid, url });
     if (debug) setShowDebug(true);
+
+    // Fetch tenant info
+    fetch('/api/tenant-info')
+      .then(res => res.json())
+      .then(data => setTenantName(data.name))
+      .catch(() => setTenantName('Wi-Fi Grátis'));
   }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -515,7 +844,7 @@ function Portal() {
           <div className="bg-blue-600 p-1.5 rounded-lg">
             <Wifi className="text-white w-5 h-5" />
           </div>
-          <span className="font-bold text-lg tracking-tight">Wi-Fi Grátis</span>
+          <span className="font-bold text-lg tracking-tight">{tenantName}</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-full border border-blue-100">
@@ -716,6 +1045,7 @@ export default function App() {
         <Route path="/" element={<Portal />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/admin" element={<AdminPage />} />
+        <Route path="/admin/tenants" element={<TenantsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
