@@ -536,11 +536,7 @@ function Portal() {
       <main className="flex-1 max-w-lg mx-auto w-full px-6 py-8">
         {/* Debug Section */}
         {showDebug && (
-          <motion.div 
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            className="mb-8 p-6 bg-slate-900 rounded-3xl border border-slate-800 shadow-xl overflow-hidden"
-          >
+          <div className="mb-8 p-6 bg-slate-900 rounded-3xl border border-slate-800 shadow-xl overflow-hidden">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-blue-400 font-mono text-xs uppercase tracking-widest">Diagnostic Console</h3>
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
@@ -581,6 +577,7 @@ function Portal() {
               
               <div className="pt-4 flex gap-2">
                 <button 
+                  type="button"
                   onClick={() => {
                     const manualMac = prompt('Insira o MAC Address manualmente (ex: aa:bb:cc:dd:ee:ff):');
                     if (manualMac) setParams(prev => ({ ...prev, id: manualMac }));
@@ -590,6 +587,7 @@ function Portal() {
                   Override MAC
                 </button>
                 <button 
+                  type="button"
                   onClick={() => window.location.reload()}
                   className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-xl text-[10px] font-bold uppercase transition-colors border border-slate-700"
                 >
@@ -597,7 +595,7 @@ function Portal() {
                 </button>
               </div>
             </div>
-          </motion.div>
+          </div>
         )}
         {/* Hero Section */}
         <section className="mb-10">
@@ -674,6 +672,20 @@ function Portal() {
                 <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
                 <p className="text-sm text-red-600 font-medium leading-tight">{error}</p>
               </div>
+            )}
+
+            {!params.id && (
+              <button 
+                type="button"
+                onClick={() => {
+                  const manualMac = prompt('Insira o MAC Address manualmente (ex: aa:bb:cc:dd:ee:ff):');
+                  if (manualMac) setParams(prev => ({ ...prev, id: manualMac }));
+                }}
+                className="w-full py-3 bg-amber-50 border border-amber-200 text-amber-700 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 transition-all"
+              >
+                <Smartphone className="w-4 h-4" />
+                TESTE: INSERIR MAC MANUALMENTE
+              </button>
             )}
 
             <button 
