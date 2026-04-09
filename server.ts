@@ -197,6 +197,13 @@ async function authorizeGuest(mac: string, minutes: number = 60) {
 }
 
 // API Routes
+app.use((req, res, next) => {
+  if (req.path === '/' || req.path === '/index.html') {
+    console.log(`[PORTAL ACCESS] Path: ${req.path} | Query: ${JSON.stringify(req.query)}`);
+  }
+  next();
+});
+
 app.post("/api/admin/login", async (req, res) => {
   const { username, password } = req.body;
 

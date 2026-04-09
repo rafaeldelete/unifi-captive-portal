@@ -555,6 +555,12 @@ function Portal() {
                 <span className="text-slate-300">{params.ssid || 'N/A'}</span>
               </div>
               <div className="pt-2">
+                <p className="text-slate-500 mb-1">RAW QUERY STRING:</p>
+                <p className="text-[10px] text-blue-300 break-all bg-slate-800/50 p-2 rounded-lg font-mono leading-tight">
+                  {window.location.search || '(Empty)'}
+                </p>
+              </div>
+              <div className="pt-2">
                 <p className="text-slate-500 mb-1">FULL URL:</p>
                 <p className="text-[9px] text-slate-400 break-all bg-slate-800/50 p-2 rounded-lg font-mono leading-tight">
                   {window.location.href}
