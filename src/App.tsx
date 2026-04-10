@@ -659,9 +659,9 @@ function TenantsPage() {
                       value={newTenant.subdomain}
                       onChange={(e) => setNewTenant({...newTenant, subdomain: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')})}
                       placeholder="hotel-central"
-                      className="w-full px-5 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none pr-24"
+                      className="w-full px-5 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none pr-44"
                     />
-                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">.wifi.com</span>
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">.unificaptive.com.br</span>
                   </div>
                 </div>
 
