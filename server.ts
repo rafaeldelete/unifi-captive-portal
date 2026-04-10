@@ -396,12 +396,21 @@ app.get("/api/admin/tenants", authenticateSuperadmin, async (req, res) => {
 });
 
 app.post("/api/admin/tenants", authenticateSuperadmin, async (req, res) => {
-  const { name, subdomain, unifi_url, unifi_user, unifi_pass, unifi_site } = req.body;
+  const { name, subdomain, unifi_url, unifi_user, unifi_pass, unifi_site, hero_title, hero_description } = req.body;
   
   try {
     const { data, error } = await supabase
       .from('tenants')
-      .insert([{ name, subdomain, unifi_url, unifi_user, unifi_pass, unifi_site: unifi_site || 'default' }])
+      .insert([{ 
+        name, 
+        subdomain, 
+        unifi_url, 
+        unifi_user, 
+        unifi_pass, 
+        unifi_site: unifi_site || 'default',
+        hero_title,
+        hero_description
+      }])
       .select()
       .single();
 
@@ -537,7 +546,9 @@ app.get("/api/tenant-info", async (req, res) => {
       });
     }
     res.json({ 
-      name: tenant.name
+      name: tenant.name,
+      hero_title: tenant.hero_title,
+      hero_description: tenant.hero_description
     });
   } catch (error) {
     res.json({ 

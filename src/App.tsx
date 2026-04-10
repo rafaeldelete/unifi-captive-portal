@@ -36,6 +36,8 @@ interface Tenant {
   unifi_user: string;
   unifi_pass: string;
   unifi_site: string;
+  hero_title?: string;
+  hero_description?: string;
   created_at: string;
 }
 
@@ -450,7 +452,9 @@ function TenantsPage() {
     unifi_url: '',
     unifi_user: '',
     unifi_pass: '',
-    unifi_site: 'default'
+    unifi_site: 'default',
+    hero_title: '',
+    hero_description: ''
   });
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
@@ -503,7 +507,9 @@ function TenantsPage() {
         unifi_url: '',
         unifi_user: '',
         unifi_pass: '',
-        unifi_site: 'default'
+        unifi_site: 'default',
+        hero_title: '',
+        hero_description: ''
       });
       fetchTenants();
     } catch (err: any) {
@@ -689,7 +695,7 @@ function TenantsPage() {
                   />
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 md:col-span-2">
                   <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Usuário UniFi</label>
                   <input 
                     required
@@ -701,7 +707,7 @@ function TenantsPage() {
                   />
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 md:col-span-2">
                   <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Senha UniFi</label>
                   <input 
                     required
@@ -712,7 +718,33 @@ function TenantsPage() {
                     className="w-full px-5 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none"
                   />
                 </div>
-                
+
+                <div className="md:col-span-2 pt-4 border-t border-slate-100">
+                  <h3 className="text-sm font-bold text-slate-900 mb-4">Personalização do Portal</h3>
+                </div>
+
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Título Hero (Opcional)</label>
+                  <input 
+                    type="text"
+                    value={newTenant.hero_title}
+                    onChange={(e) => setNewTenant({...newTenant, hero_title: e.target.value})}
+                    placeholder="Ex: Bem-vindo ao Wi-Fi do Hotel Central"
+                    className="w-full px-5 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Descrição Hero (Opcional)</label>
+                  <textarea 
+                    value={newTenant.hero_description}
+                    onChange={(e) => setNewTenant({...newTenant, hero_description: e.target.value})}
+                    placeholder="Ex: Conecte-se agora e aproveite nossa rede de alta velocidade."
+                    rows={3}
+                    className="w-full px-5 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none resize-none"
+                  />
+                </div>
+
                 <button 
                   type="submit"
                   disabled={submitting}
@@ -1015,7 +1047,9 @@ function AdminsPage() {
 // --- Portal Component (Original Home) ---
 function Portal() {
   const [params, setParams] = useState<PortalParams>({ id: null, ap: null, ssid: null, url: null });
-  const [tenantName, setTenantName] = useState('UnifiCaptive by CoreBase');
+  const [tenantInfo, setTenantInfo] = useState<{name: string, hero_title?: string, hero_description?: string}>({
+    name: 'UnifiCaptive by CoreBase'
+  });
   const [formData, setFormData] = useState<RegistrationData>({ fullName: '', email: '', phoneNumber: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -1044,8 +1078,8 @@ function Portal() {
     // Fetch tenant info
     fetch('/api/tenant-info')
       .then(res => res.json())
-      .then(data => setTenantName(data.name))
-      .catch(() => setTenantName('UnifiCaptive by CoreBase'));
+      .then(data => setTenantInfo(data))
+      .catch(() => setTenantInfo({ name: 'UnifiCaptive by CoreBase' }));
   }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1162,7 +1196,7 @@ function Portal() {
           <div className="bg-blue-600 p-1.5 rounded-lg">
             <Wifi className="text-white w-5 h-5" />
           </div>
-          <span className="font-bold text-lg tracking-tight">{tenantName}</span>
+          <span className="font-bold text-lg tracking-tight">{tenantInfo.name}</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-full border border-blue-100">
@@ -1240,10 +1274,12 @@ function Portal() {
         <section className="mb-10">
           <p className="text-blue-600 font-bold text-xs uppercase tracking-widest mb-3">Conectividade Premium</p>
           <h1 className="text-[42px] leading-[1.1] font-bold tracking-tight mb-6">
-            Experimente <span className="text-blue-600">Acesso</span> Ilimitado.
+            {tenantInfo.hero_title || (
+              <>Experimente <span className="text-blue-600">Acesso</span> Ilimitado.</>
+            )}
           </h1>
           <p className="text-slate-500 text-lg leading-relaxed">
-            Junte-se à nossa rede de alta velocidade. O cadastro é rápido, seguro e garante conectividade imediata pronta para 5G.
+            {tenantInfo.hero_description || "Junte-se à nossa rede de alta velocidade. O cadastro é rápido, seguro e garante conectividade imediata pronta para 5G."}
           </p>
         </section>
 
@@ -1264,7 +1300,7 @@ function Portal() {
           animate={{ y: 0, opacity: 1 }}
           className="bg-white rounded-[32px] shadow-2xl shadow-slate-200/60 p-8 border border-slate-100 mb-10"
         >
-          <h2 className="text-2xl font-bold mb-8">Cadastro de Rede</h2>
+          <h2 className="text-2xl font-bold mb-8">Ingresse agora</h2>
           
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
@@ -1288,7 +1324,7 @@ function Portal() {
                 name="email"
                 value={formData.email}
                 onChange={handleInputChange}
-                placeholder="alex.rivers@modernui.com"
+                placeholder="alex.rivers@unificaptive.com.br"
                 className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none"
               />
             </div>
