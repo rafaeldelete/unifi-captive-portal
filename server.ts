@@ -475,6 +475,18 @@ app.post("/api/authorize", async (req, res) => {
     return res.status(400).json({ error: "MAC Address is required" });
   }
 
+  // Backend Validation
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const phoneRegex = /^(\(?\d{2}\)?\s?)?(\d{4,5}-?\d{4})$/;
+
+  if (email && !emailRegex.test(email)) {
+    return res.status(400).json({ error: "Formato de e-mail inválido" });
+  }
+
+  if (phoneNumber && !phoneRegex.test(phoneNumber.replace(/\s/g, ''))) {
+    return res.status(400).json({ error: "Formato de telefone inválido" });
+  }
+
   try {
     // Identify tenant from request
     const tenant = await getTenantFromReq(req);

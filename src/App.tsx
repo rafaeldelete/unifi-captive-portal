@@ -1059,6 +1059,23 @@ function Portal() {
     setError(null);
     setDebugInfo(null);
 
+    // Validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    // Brazilian phone format: (XX) 9XXXX-XXXX or (XX) XXXX-XXXX
+    const phoneRegex = /^(\(?\d{2}\)?\s?)?(\d{4,5}-?\d{4})$/;
+
+    if (!emailRegex.test(formData.email)) {
+      setError('Por favor, insira um e-mail válido.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (!phoneRegex.test(formData.phoneNumber.replace(/\s/g, ''))) {
+      setError('Por favor, insira um telefone válido (ex: 11 99999-9999).');
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
       // Call Backend API to register AND authorize in UniFi
       const response = await fetch('/api/authorize', {
