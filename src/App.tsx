@@ -574,7 +574,7 @@ function TenantsPage() {
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <h3 className="font-bold text-lg text-slate-900">{tenant.name}</h3>
-                    <p className="text-blue-600 text-xs font-mono font-bold">{tenant.subdomain}.seudominio.com</p>
+                    <p className="text-blue-600 text-xs font-mono font-bold">{tenant.subdomain}.unificaptive.com.br</p>
                   </div>
                   <button 
                     onClick={() => handleDeleteTenant(tenant.id)}
@@ -598,7 +598,7 @@ function TenantsPage() {
                 <div className="flex items-center justify-between pt-4 border-t border-slate-50">
                   <span className="text-[10px] text-slate-400">Criado em {new Date(tenant.created_at).toLocaleDateString('pt-BR')}</span>
                   <a 
-                    href={`http://${tenant.subdomain}.localhost:3000`} 
+                    href={`https://${tenant.subdomain}.unificaptive.com.br`} 
                     target="_blank" 
                     rel="noopener noreferrer"
                     className="text-[10px] font-bold text-blue-600 hover:underline"
