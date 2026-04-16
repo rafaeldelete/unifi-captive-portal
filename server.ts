@@ -17,7 +17,7 @@ dotenv.config();
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'unifi-captive-secret-key-2026';
 
 // Admin Default Credentials (Fallback)

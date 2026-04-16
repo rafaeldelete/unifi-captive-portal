@@ -1,0 +1,45 @@
+# Stage 1: Build
+FROM node:20-slim AS builder
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install ALL dependencies (including devDependencies for build)
+RUN npm install
+
+# Copy source code
+COPY . .
+
+# Build the frontend assets
+RUN npm run build
+
+# Stage 2: Production Runtime
+FROM node:20-slim
+
+WORKDIR /app
+
+# Set production environment
+ENV NODE_ENV=production
+# Set port to 3001 as requested
+ENV PORT=3001
+
+# Copy package files
+COPY package*.json ./
+
+# Install only production dependencies
+# Note: tsx is in devDependencies but we need it to run server.ts
+# Alternatively, we could compile server.ts to JS, but for now we'll install tsx
+RUN npm install --production && npm install -g tsx
+
+# Copy built assets from builder
+COPY --from=builder /app/dist ./dist
+# Copy server source
+COPY --from=builder /app/server.ts ./
+
+# Expose the requested port
+EXPOSE 3001
+
+# Start the server using tsx
+CMD ["tsx", "server.ts"]
