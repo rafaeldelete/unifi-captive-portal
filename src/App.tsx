@@ -1283,17 +1283,6 @@ function Portal() {
           </p>
         </section>
 
-        {/* Speed Badge */}
-        <div className="bg-slate-100/80 rounded-2xl p-5 flex items-center gap-5 mb-10 border border-slate-200/50">
-          <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-200">
-            <Smartphone className="text-white w-6 h-6" />
-          </div>
-          <div>
-            <h3 className="font-bold text-slate-900">Velocidades Gigabit</h3>
-            <p className="text-slate-500 text-sm">Otimizado para streaming e chamadas de vídeo.</p>
-          </div>
-        </div>
-
         {/* Registration Form */}
         <motion.div 
           initial={{ y: 20, opacity: 0 }}

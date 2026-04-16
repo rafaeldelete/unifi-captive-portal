@@ -1,5 +1,5 @@
-# Build stage
-FROM node:22-slim AS builder
+# Stage 1: Build
+FROM node:20-slim AS builder
 
 WORKDIR /app
 
@@ -9,33 +9,36 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install
 
-# Copy all files
+# Copy source code
 COPY . .
 
-# Build frontend
+# Build the application
+# Note: This generates the 'dist' folder for the frontend
 RUN npm run build
 
-# Production stage
-FROM node:22-slim
+# Stage 2: Runtime
+FROM node:20-slim
 
 WORKDIR /app
 
-# Copy package files and install only production dependencies
+# Copy package files and install production dependencies
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm install --production
 
-# Copy built frontend from builder
+# Copy built assets from builder
 COPY --from=builder /app/dist ./dist
-
-# Copy server files
+# Copy server source (since we use tsx to run it)
 COPY --from=builder /app/server.ts ./
-COPY --from=builder /app/tsconfig.json ./
+# Copy any other necessary files (like supabase config if it's a file, but here it's env vars)
+# If you have a firebase-applet-config.json or similar, uncomment:
+# COPY --from=builder /app/firebase-applet-config.json ./
+
+# Expose the port the app runs on
+EXPOSE 3000
 
 # Set environment to production
 ENV NODE_ENV=production
 
-# Expose port 3000
-EXPOSE 3000
-
-# Start the server using node's native TS support (Node 22.6+)
-CMD ["node", "--experimental-strip-types", "server.ts"]
+# Start the server
+# We use tsx to run the server.ts file directly as configured in your package.json
+CMD ["npm", "run", "dev"]
